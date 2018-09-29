@@ -1,0 +1,4 @@
+[[package]]
+name = "file_hasher"
+version = "0.1.0"
+
