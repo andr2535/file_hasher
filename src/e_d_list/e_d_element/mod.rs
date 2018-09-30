@@ -1,7 +1,6 @@
 extern crate blake2;
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
-use self::blake2::Blake2b;
-use self::blake2::digest::{Input, VariableOutput};
+use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 
 #[derive(Debug)]
 /// file_element is a struct for an element that is a file.
