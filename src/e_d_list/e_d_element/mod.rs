@@ -1,16 +1,24 @@
-struct file_element {
+
+/// file_element is a struct for an element that is a file
+/// it needs to know the time the file was changed, and the
+/// Hashed value of the files content.
+struct FileElement {
 	someType timechanged,
 	String file_hash
 }
+
 /// link_element is a struct for an element that is a 
 /// symbolic link, it only needs a target, which we call
 /// link_path here.
-struct link_element {
+struct LinkElement {
 	String link_path
 }
+
+/// EDElementType is used to manage whether we are storing
+/// a file or a symbolic link.
 enum EDElementType {
-	file(file_element),
-	link(link_element)
+	file(FileElement),
+	link(LinkElement)
 }
 
 /// EDElement, a shorthand for Error-detect-element
