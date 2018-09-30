@@ -86,11 +86,7 @@ impl EDElement {
 				hasher.process(&buffer);
 			}
 			else{
-				let mut tmp_buffer = Vec::new();
-				for i in 0..result_size { // Test if this is valid...
-					tmp_buffer.push(buffer[i]);
-				}
-				hasher.process(&tmp_buffer);
+				hasher.process(&buffer[0..result_size]);
 				break;
 			}
 		}
