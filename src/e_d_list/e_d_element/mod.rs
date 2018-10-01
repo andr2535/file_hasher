@@ -57,16 +57,34 @@ impl EDElement {
 
 		return EDElement{path: path, modified_date: modified_date, variant_fields:variant_fields, element_hash: element_hash};
 	}
-	pub fn from_file(path:String) -> Result<EDElement, String> {
+	/// from_path generates an EDElement from a path.
+	/// It detects automatically whether the path
+	/// refers to a link or a file.
+	pub fn from_path(path:String) -> Result<EDElement, String> {
 		match File::open(&path) {
 			Ok(file) => {
-				let hash = EDElement::hash_file(file);
-				let modified_date = match fs::symlink_metadata(&path) {
-					Ok(metadata) => metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+				match fs::symlink_metadata(&path) {
+					Ok(metadata) => {
+						if metadata.is_dir() {return Result::Err(String::from("The path is a directory!"));}
+						let modified_date = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+
+						if metadata.is_file() { // The path is a file.
+							let hash = EDElement::hash_file(file);
+							let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
+							return Result::Ok(EDElement::from_internal(path, modified_date, file_fields));
+						}
+
+						else { // The path is a symbolic link
+							let link_path = match fs::read_link(&path).unwrap().to_str(){
+								Some(link_path) => String::from(link_path),
+								None => panic!("link_path is not a valid utf-8 string!")
+							};
+							let link_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
+							return Result::Ok(EDElement::from_internal(path, modified_date, link_fields));
+						}
+					},
 					Err(_err) => panic!("OS or filesystem doesn't support modified time!")
 				};
-				let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
-				return Result::Ok(EDElement::from_internal(path, modified_date, file_fields));
 			},
 			Err(_err) => () // Returning error below
 		}
