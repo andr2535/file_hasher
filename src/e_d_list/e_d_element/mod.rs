@@ -3,16 +3,15 @@ use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 
 #[derive(Debug)]
-/// file_element is a struct for an element that is a file.
-/// It needs to know the hashed value of the files content.
+/// FileElement is a struct that contains the fields that
+/// a file needs, but a symbolic link does not need.
 struct FileElement {
 	file_hash: [u8; 32]
 }
 
 #[derive(Debug)]
-/// link_element is a struct for an element that is a
-/// symbolic link, it only needs a target, which we call
-/// link_path here.
+/// LinkElement is a struct that contains the fields, that
+/// a symbolic link needs, that a file does not need.
 struct LinkElement {
 	link_path: String
 }
@@ -32,7 +31,7 @@ enum EDVariantFields {
 /// 
 /// path is used for storing the path for the element
 /// 
-/// element_type_fields can store either information about a
+/// variant_fields can store either information about a
 /// file, or it can store information about a link.
 /// 
 /// element_hash contains a hash value of all the fields in
@@ -68,13 +67,14 @@ impl EDElement {
 						if metadata.is_dir() {return Result::Err(String::from("The path is a directory!"));}
 						let modified_date = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 
-						if metadata.is_file() { // The path is a file.
+						if metadata.is_file() {
+							// The path is a file.
 							let hash = EDElement::hash_file(file);
 							let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
 							return Result::Ok(EDElement::from_internal(path, modified_date, file_fields));
 						}
-
-						else { // The path is a symbolic link
+						else {
+							// The path is a symbolic link
 							let link_path = match fs::read_link(&path).unwrap().to_str(){
 								Some(link_path) => String::from(link_path),
 								None => panic!("link_path is not a valid utf-8 string!")
@@ -83,14 +83,14 @@ impl EDElement {
 							return Result::Ok(EDElement::from_internal(path, modified_date, link_fields));
 						}
 					},
-					Err(_err) => panic!("OS or filesystem doesn't support modified time!")
+					Err(err) => panic!(format!("Error getting file metadata {}", err))
 				};
 			},
-			Err(_err) => () // Returning error below
+			Err(err) => return Result::Err(format!("Error opening file {}", err))
 		}
-		return Result::Err(String::from("Error creating EDElement from file"));
 	}
-	/// hash_file reads a file, and creates a hash for it in a u8 vector.
+	/// hash_file reads a file, and creates a hash for it in an
+	/// u8 vector, of length 32.
 	/// If there is trouble reading the file, hash_file will panic.
 	/// (Probably should be changed in the future)
 	fn hash_file(mut file:File) -> [u8; 32] {
