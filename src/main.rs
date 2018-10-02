@@ -8,4 +8,6 @@ fn main() {
 		Err(error) => {println!("{}", error); return;}
 	};
 	println!("{:?}", element);
+	println!("{:?}", EDElement::from_str(&element.to_str()).unwrap());
+	println!("{:?}", element.to_str());
 }
