@@ -31,6 +31,9 @@ enum EDVariantFields {
 /// 
 /// path is used for storing the path for the element
 /// 
+/// modified_time is used for storing the exact time of the
+/// last modification of the file or link.
+///
 /// variant_fields can store either information about a
 /// file, or it can store information about a link.
 /// 
