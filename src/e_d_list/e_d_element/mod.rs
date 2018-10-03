@@ -131,8 +131,9 @@ impl EDElement {
 		return format!("[{},{},{}]", self.path.replace("\\", "\\\\").replace(",", "\\,"), self.modified_time, variant_fields);
 	}
 
-	/// Returns a EDElement if element_string is a valid string
-	/// describing an EDElement struct.
+	/// Parses a string into an EDElement struct, if the string
+	/// does not describe a valid EDElement struct, it will return
+	/// a String containing an error message.
 	pub fn from_str(element_string: &String) -> Result<EDElement, String> {
 		enum Phase {
 			BeforeFirstBracket,
@@ -239,7 +240,9 @@ impl EDElement {
 			Ok(value) => value,
 			Err(_err) => return Result::Err(String::from("Error parsing modified time"))
 		};
-		if file_hash.len() == 32 {
+
+		if variant_string == "file" {
+			if file_hash.len() != 32 {return Result::Err(String::from("File hash has an invalid length"))};
 			let mut file_hash_array = [0u8; 32];
 			for (place, element) in file_hash_array.iter_mut().zip(file_hash.iter()) {
 				*place = *element;
@@ -247,9 +250,12 @@ impl EDElement {
 			let variant_fields = EDVariantFields::File(FileElement{file_hash: file_hash_array});
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
-		else {
+
+		else if variant_string == "link" {
 			let variant_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
+
+		else {panic!("Invalid Phase value in variant_used in from_string! Fix this!");}
 	}
 }

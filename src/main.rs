@@ -7,7 +7,7 @@ fn main() {
 		Ok(element) => element,
 		Err(error) => {println!("{}", error); return;}
 	};
-	println!("{:?}", element);
+	println!("{:?}", element.to_str());
 	println!("{:?}", EDElement::from_str(&element.to_str()).unwrap());
 	println!("{:?}", element.to_str());
 }
