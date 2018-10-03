@@ -113,10 +113,18 @@ impl EDElement {
 		return output;
 	}
 
+	/// Returns a hash of the entire EDElement.
+	/// This hash does not represent the file_hash, it
+	/// represents the entire element.
+	/// So if anything changes inside the EDElement,
+	/// this hash would be invalid.
 	pub fn get_element_hash(&self) -> [u8; 32] {
 		return self.element_hash;
 	}
 
+	/// Convert EDElement to a String representation, this
+	/// string can be parsed back to an EDElement
+	/// by the function from_str.
 	pub fn to_str(&self) -> String {
 		let variant_fields = match &self.variant_fields {
 			EDVariantFields::File(file) => {
@@ -242,6 +250,7 @@ impl EDElement {
 		};
 
 		if variant_string == "file" {
+			// Create Result with EDElement, that has a FileElement.
 			if file_hash.len() != 32 {return Result::Err(String::from("File hash has an invalid length"))};
 			let mut file_hash_array = [0u8; 32];
 			for (place, element) in file_hash_array.iter_mut().zip(file_hash.iter()) {
@@ -252,10 +261,11 @@ impl EDElement {
 		}
 
 		else if variant_string == "link" {
+			// Create Result with EDElement, that has a LinkElement.
 			let variant_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
-
+		// We should never reach this panic.
 		else {panic!("Invalid Phase value in variant_used in from_string! Fix this!");}
 	}
 }
