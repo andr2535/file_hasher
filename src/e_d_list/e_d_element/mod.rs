@@ -57,7 +57,7 @@ impl EDElement {
 		let mut element_hash = [0u8; 32];
 		hasher.variable_result(&mut element_hash).unwrap();
 
-		return EDElement{path: path, modified_time: modified_time, variant_fields:variant_fields, element_hash: element_hash};
+		EDElement{path: path, modified_time: modified_time, variant_fields:variant_fields, element_hash: element_hash}
 	}
 	/// from_path generates an EDElement from a path.
 	/// It detects automatically whether the path
@@ -92,12 +92,23 @@ impl EDElement {
 			Err(err) => return Result::Err(format!("Error opening file {}", err))
 		}
 	}
+
+	/// test_integrity tests the integrity of the EDElement against
+	/// the file or symbolic link it points to.
+	/// If the symbolic_link or file has changed, or there has
+	/// been corruption in the EDElement struct, a string
+	/// containing the error will be given back.
+	/// If not, it returns None.
+	pub fn test_integrity(&self) -> Option<String> {
+
+		Option::Some(String::from("Not implemented yet"))
+	}
 	/// hash_file reads a file, and creates a hash for it in an
 	/// u8 vector, of length 32.
 	/// If there is trouble reading the file, hash_file will panic.
 	/// (Probably should be changed in the future)
 	fn hash_file(mut file:File) -> [u8; 32] {
-		let buffer_size = 20 * 1024 * 1024; // Buffer_size = 20MB
+		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = Blake2b::new(32).unwrap();
 		loop {
@@ -113,7 +124,7 @@ impl EDElement {
 		}
 		let mut output = [0u8; 32];
 		hasher.variable_result(&mut output).unwrap();
-		return output;
+		output
 	}
 
 	/// Returns a hash of the entire EDElement.
@@ -139,7 +150,7 @@ impl EDElement {
 			},
 			EDVariantFields::Link(link) => format!("link({})", link.link_path.replace("\\", "\\\\").replace(")", "\\)"))
 		};
-		return format!("[{},{},{}]", self.path.replace("\\", "\\\\").replace(",", "\\,"), self.modified_time, variant_fields);
+		format!("[{},{},{}]", self.path.replace("\\", "\\\\").replace(",", "\\,"), self.modified_time, variant_fields)
 	}
 
 	/// Parses a string into an EDElement struct, if the string
@@ -165,6 +176,8 @@ impl EDElement {
 
 		let mut last_file_hash_char:Option<char> = Option::None;
 		let mut escape_char_set = false;
+
+		let mut finished_parsing = false;
 
 		for character in element_string.chars() {
 			match cur_phase {
@@ -241,10 +254,15 @@ impl EDElement {
 				},
 				Phase::BeforeLastBracket => {
 					if character != ']' {return Result::Err(String::from("Last bracket missing from EDElement string!"));}
-					else {break;} // Finished generating variables.
+					else {finished_parsing = true; break;} // Finished generating variables.
 				}
 			};
 		}
+
+		if !finished_parsing {
+			return Result::Err(String::from("String parsing did not finish"));
+		}
+
 		// Finished fetching data from string, converting to proper types, and
 		// Returning result.
 		let modified_time = match u64::from_str_radix(&time_string, 10) {
