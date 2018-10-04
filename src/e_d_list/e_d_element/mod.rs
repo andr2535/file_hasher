@@ -281,12 +281,11 @@ impl EDElement {
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
 
-		else if variant_string == "link" {
+		else {
+			// If variant_string is not file, it must be "link".
 			// Create Result with EDElement, that has a LinkElement.
 			let variant_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
-		// We should never reach this panic.
-		else {panic!("Invalid Phase value in variant_used in from_string! Fix this!");}
 	}
 }
