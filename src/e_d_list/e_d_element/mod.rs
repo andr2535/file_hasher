@@ -49,7 +49,7 @@ impl EDElement {
 	fn from_internal(path:String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
 		let mut hasher = Blake2b::new(32).unwrap();
 		hasher.process(path.as_bytes());
-		hasher.process(format!("{}", modified_time).as_bytes());
+		hasher.process(modified_time.to_string().as_bytes());
 		match &variant_fields {
 			EDVariantFields::File(file) => hasher.process(&file.file_hash),
 			EDVariantFields::Link(link) => hasher.process(link.link_path.as_bytes())
@@ -139,7 +139,7 @@ impl EDElement {
 	/// Convert EDElement to a String representation, this
 	/// string can be parsed back to an EDElement
 	/// by the function from_str.
-	pub fn to_str(&self) -> String {
+	pub fn to_string(&self) -> String {
 		let variant_fields = match &self.variant_fields {
 			EDVariantFields::File(file) => {
 				let mut file_hash = String::new();
