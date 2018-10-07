@@ -2,11 +2,13 @@ extern crate blake2;
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 
+const HASH_OUTPUT_LENGTH: usize = 32;
+
 #[derive(Debug)]
 /// FileElement is a struct that contains the fields that
 /// a file needs, but a symbolic link does not need.
 struct FileElement {
-	file_hash: [u8; 32]
+	file_hash: [u8; HASH_OUTPUT_LENGTH]
 }
 
 #[derive(Debug)]
@@ -43,18 +45,18 @@ pub struct EDElement {
 	path: String,
 	modified_time: u64,
 	variant_fields: EDVariantFields,
-	element_hash: [u8; 32]
+	element_hash: [u8; HASH_OUTPUT_LENGTH]
 }
 impl EDElement {
 	fn from_internal(path:String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
-		let mut hasher = Blake2b::new(32).unwrap();
+		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		hasher.process(path.as_bytes());
 		hasher.process(modified_time.to_string().as_bytes());
 		match &variant_fields {
 			EDVariantFields::File(file) => hasher.process(&file.file_hash),
 			EDVariantFields::Link(link) => hasher.process(link.link_path.as_bytes())
 		}
-		let mut element_hash = [0u8; 32];
+		let mut element_hash = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut element_hash).unwrap();
 
 		EDElement{path: path, modified_time: modified_time, variant_fields:variant_fields, element_hash: element_hash}
@@ -104,13 +106,13 @@ impl EDElement {
 		Option::Some(String::from("Not implemented yet"))
 	}
 	/// hash_file reads a file, and creates a hash for it in an
-	/// u8 vector, of length 32.
+	/// u8 vector, of length HASH_OUTPUT_LENGTH.
 	/// If there is trouble reading the file, hash_file will panic.
 	/// (Probably should be changed in the future)
-	fn hash_file(mut file:File) -> [u8; 32] {
+	fn hash_file(mut file:File) -> [u8; HASH_OUTPUT_LENGTH] {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
-		let mut hasher = Blake2b::new(32).unwrap();
+		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		loop {
 			let result_size = file.read(&mut buffer).unwrap();
 			
@@ -122,7 +124,7 @@ impl EDElement {
 				break;
 			}
 		}
-		let mut output = [0u8; 32];
+		let mut output = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut output).unwrap();
 		output
 	}
@@ -132,7 +134,7 @@ impl EDElement {
 	/// represents the entire element.
 	/// So if anything changes inside the EDElement,
 	/// this hash would be invalid.
-	pub fn get_element_hash(&self) -> [u8; 32] {
+	pub fn get_element_hash(&self) -> [u8; HASH_OUTPUT_LENGTH] {
 		return self.element_hash;
 	}
 
@@ -272,8 +274,8 @@ impl EDElement {
 
 		if variant_string == "file" {
 			// Create Result with EDElement, that has a FileElement.
-			if file_hash.len() != 32 {return Result::Err(String::from("File hash has an invalid length"))};
-			let mut file_hash_array = [0u8; 32];
+			if file_hash.len() != HASH_OUTPUT_LENGTH {return Result::Err(String::from("File hash has an invalid length"))};
+			let mut file_hash_array = [0u8; HASH_OUTPUT_LENGTH];
 			for (place, element) in file_hash_array.iter_mut().zip(file_hash.iter()) {
 				*place = *element;
 			}
