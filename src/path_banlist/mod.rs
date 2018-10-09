@@ -12,15 +12,43 @@ enum LineType {
 	BannedPath
 }
 
+/// The trait Answer is used for handling the user input, when
+/// they need to figure out how to proceed.
+pub trait Answer {
+	fn get_answer(&self, message:String) -> bool;
+}
+
 #[derive(Debug)]
+/// PathBanlist is a HashSet that contains all the paths that
+/// should not be hashed by the EDList objects.
 pub struct PathBanlist {
 	banned_paths:HashSet<String>
 }
 impl PathBanlist {
-	pub fn open() -> Result<PathBanlist, String> {
+	/// Requires an object implementing the trait Answer also defined in 
+	/// this file.
+	/// Attempts to open the banlist file from ./file_hasher_files/banlist
+	/// May use the given object implementing Answer, to ask the user to
+	/// give input if an issue arises.
+	/// If attempts go wrong, the funtion will return a string, with a
+	/// description of the problem.
+	pub fn open(answer: impl Answer) -> Result<PathBanlist, String> {
 		let file = match File::open("./file_hasher_files/banlist") {
 			Ok(file) => file,
-			Err(err) => return Result::Err(format!("banlist file could not be opened, error message = {}", err))
+			Err(err) => {
+				let create_new = answer.get_answer(
+				                 format!("banlist file could not be opened, error message = {}\
+				                          \nDo you wish to create a new banlist?", err));
+				if create_new {
+					match PathBanlist::new(answer) {
+						Ok(banlist) => return Ok(banlist),
+						Err(err) => return Err(err)
+					}
+				}
+				else {
+					return Result::Err(String::from("banlist file could not be opened"));
+				}
+			}
 		};
 		let buf_reader = BufReader::new(file);
 		
@@ -72,7 +100,13 @@ impl PathBanlist {
 
 		return Result::Ok(PathBanlist{banned_paths});
 	}
-	pub fn new() -> Result<PathBanlist, String> {
+	/// Attempts to create a new banlist file, and then opens it using
+	/// the open function.
+	/// Requires a object that implements Answer, so that it can send it
+	/// on to the open function.
+	/// When it fails, it returns a string containing information about
+	/// the error.
+	pub fn new(answer: impl Answer) -> Result<PathBanlist, String> {
 		match create_dir_all("./file_hasher_files") {
 			Ok(_res) => (),
 			Err(err) => return Err(format!("Error creating file_hasher directory, Error = {}", err))
@@ -98,12 +132,14 @@ impl PathBanlist {
 
 		match write_result {
 			Ok(_len) => {
-				return PathBanlist::open();
+				return PathBanlist::open(answer);
 			}
 			Err(err) => return Err(format!("Error writing checksum to banlist, Error = {}", err))
 		};
 	}
 
+	/// Converts a Blake2b object into a string.
+	/// The hash is output in capital hexadecimal letters.
 	fn blake2_to_string(hasher:Blake2b) -> String {
 		let mut hash = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut hash).unwrap();

@@ -1,5 +1,6 @@
 mod e_d_list;
 mod path_banlist;
+mod interfacers;
 
 fn main() {
 	use e_d_list::e_d_element::EDElement;
@@ -10,17 +11,12 @@ fn main() {
 	println!("{:?}", element.to_string());
 	println!("{:?}", EDElement::from_str(&element.to_string()).unwrap());
 	println!("{:?}", element.to_string());
-	use path_banlist::PathBanlist;
 
-	let result = match PathBanlist::open() {
+	let result = match path_banlist::PathBanlist::open(interfacers::BanlistAsker::new()) {
 		Ok(result) => result,
 		Err(err) => {
 			println!("Error opening banlist, Error = {}", err);
-			println!("Creating new banlist");
-			match PathBanlist::new() {
-				Ok(result) => result,
-				Err(err) => panic!(err)
-			}
+			return;
 		}
 	};
 	println!("result = {:?}", result);
