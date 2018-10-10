@@ -106,7 +106,7 @@ impl PathBanlist {
 	/// on to the open function.
 	/// When it fails, it returns a string containing information about
 	/// the error.
-	pub fn new(answer: impl Answer) -> Result<PathBanlist, String> {
+	fn new(answer: impl Answer) -> Result<PathBanlist, String> {
 		match create_dir_all("./file_hasher_files") {
 			Ok(_res) => (),
 			Err(err) => return Err(format!("Error creating file_hasher directory, Error = {}", err))

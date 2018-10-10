@@ -65,33 +65,33 @@ impl EDElement {
 	/// It detects automatically whether the path
 	/// refers to a link or a file.
 	pub fn from_path(path:String) -> Result<EDElement, String> {
-		match File::open(&path) {
-			Ok(file) => {
-				match fs::symlink_metadata(&path) {
-					Ok(metadata) => {
-						if metadata.is_dir() {return Result::Err(String::from("The path is a directory!"));}
-						let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-
-						if metadata.is_file() {
-							// The path is a file.
-							let hash = EDElement::hash_file(file);
-							let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
-							return Result::Ok(EDElement::from_internal(path, modified_time, file_fields));
-						}
-						else {
-							// The path is a symbolic link
-							let link_path = match fs::read_link(&path).unwrap().to_str(){
-								Some(link_path) => String::from(link_path),
-								None => panic!("link_path is not a valid utf-8 string!")
-							};
-							let link_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
-							return Result::Ok(EDElement::from_internal(path, modified_time, link_fields));
-						}
-					},
-					Err(err) => panic!(format!("Error getting file metadata {}", err))
-				};
-			},
+		let file = match File::open(&path) {
+			Ok(file) => file,
 			Err(err) => return Result::Err(format!("Error opening file {}", err))
+		};
+
+		let metadata = match fs::symlink_metadata(&path) {
+			Ok(metadata) => metadata,
+			Err(err) => panic!(format!("Error getting file metadata {}", err))
+		};
+
+		if metadata.is_dir() {return Result::Err(String::from("The path is a directory!"));}
+		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+
+		if metadata.is_file() {
+			// The path is a file.
+			let hash = EDElement::hash_file(file);
+			let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
+			return Result::Ok(EDElement::from_internal(path, modified_time, file_fields));
+		}
+		else {
+			// The path is a symbolic link
+			let link_path = match fs::read_link(&path).unwrap().to_str(){
+				Some(link_path) => String::from(link_path),
+				None => panic!("link_path is not a valid utf-8 string!")
+			};
+			let link_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
+			return Result::Ok(EDElement::from_internal(path, modified_time, link_fields));
 		}
 	}
 
