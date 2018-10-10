@@ -146,7 +146,7 @@ impl PathBanlist {
 
 		let mut hash_string = String::with_capacity(HASH_OUTPUT_LENGTH*2);
 		for byte in hash.iter() {
-			hash_string.push_str(&format!("{:X}", byte));
+			hash_string.push_str(&format!("{:02X}", byte));
 		}
 
 		return hash_string;
@@ -183,5 +183,11 @@ impl PathBanlist {
 
 		// If line is not identified as a comment or a checksum, it must be a bannedpath.
 		LineType::BannedPath
+	}
+	/// Used to check whether a path was in the banlist.
+	/// In the future this might also test for whether the
+	/// path has any substring, that is in the banlist.
+	fn is_in_banlist(&self, path: String) -> bool {
+		return self.banned_paths.contains(&path);
 	}
 }
