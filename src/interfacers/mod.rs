@@ -29,3 +29,25 @@ impl path_banlist::Answer for BanlistAsker {
 		}
 	}
 }
+
+pub struct EDListAsker {
+	stdin: std::io::Stdin
+}
+impl EDListAsker {
+	pub fn new() -> EDListAsker {
+		let stdin = std::io::stdin();
+		EDListAsker{stdin:stdin}
+	}
+}
+impl e_d_list::EDListInterface for EDListAsker {
+	fn get_user_answer(&self, message: &str) -> String {
+		println!("{}", message);
+		let mut input_string = String::new();
+		self.stdin.read_line(&mut input_string).expect("Error reading user input");
+		input_string.pop(); // Remove endline char.
+		return input_string;
+	}
+	fn send_message(&self, message: &str) {
+		println!("{}", message);
+	}
+}

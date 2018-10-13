@@ -140,7 +140,7 @@ impl PathBanlist {
 
 	/// Converts a Blake2b object into a string.
 	/// The hash is output in capital hexadecimal letters.
-	fn blake2_to_string(hasher:Blake2b) -> String {
+	pub fn blake2_to_string(hasher:Blake2b) -> String {
 		let mut hash = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut hash).unwrap();
 
@@ -187,7 +187,7 @@ impl PathBanlist {
 	/// Used to check whether a path was in the banlist.
 	/// In the future this might also test for whether the
 	/// path has any substring, that is in the banlist.
-	fn is_in_banlist(&self, path: String) -> bool {
-		return self.banned_paths.contains(&path);
+	pub fn is_in_banlist(&self, path: &String) -> bool {
+		return self.banned_paths.contains(path);
 	}
 }

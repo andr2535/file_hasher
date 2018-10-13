@@ -3,21 +3,29 @@ mod path_banlist;
 mod interfacers;
 
 fn main() {
-	use e_d_list::e_d_element::EDElement;
-	let element = match EDElement::from_path(String::from("ln")) {
-		Ok(element) => element,
-		Err(error) => {println!("{}", error); return;}
-	};
-	println!("{:?}", element.to_string());
-	println!("{:?}", EDElement::from_str(&element.to_string()).unwrap());
-	println!("{:?}", element.to_string());
-
-	let result = match path_banlist::PathBanlist::open(interfacers::BanlistAsker::new()) {
+	let banlist = match path_banlist::PathBanlist::open(interfacers::BanlistAsker::new()) {
 		Ok(result) => result,
 		Err(err) => {
 			println!("Error opening banlist, Error = {}", err);
 			return;
 		}
 	};
-	println!("result = {:?}", result);
+	let mut edlist = match e_d_list::EDList::open(interfacers::EDListAsker::new(), banlist) {
+		Ok(list) => list,
+		Err(err) => {
+			println!("Error opening list, {}", err);
+			return;
+		}
+	};
+	match edlist.create(interfacers::EDListAsker::new()) {
+		Ok(_res) => (),
+		Err(err) => {
+			println!("Error from edlist.create {}", err);
+			return;
+		}
+	}
+	match edlist.write_hash_file() {
+		Ok(_ok) => (),
+		Err(err) => println!("Error writing EDList to file, {}", err)
+	}
 }

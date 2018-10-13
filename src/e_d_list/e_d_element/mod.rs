@@ -115,14 +115,8 @@ impl EDElement {
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		loop {
 			let result_size = file.read(&mut buffer).unwrap();
-			
-			if result_size == buffer_size{
-				hasher.process(&buffer);
-			}
-			else{
-				hasher.process(&buffer[0..result_size]);
-				break;
-			}
+			hasher.process(&buffer[0..result_size]);
+			if result_size != buffer_size {break;}
 		}
 		let mut output = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut output).unwrap();
@@ -134,8 +128,14 @@ impl EDElement {
 	/// represents the entire element.
 	/// So if anything changes inside the EDElement,
 	/// this hash would be invalid.
-	pub fn get_element_hash(&self) -> [u8; HASH_OUTPUT_LENGTH] {
-		return self.element_hash;
+	pub fn get_hash(&self) -> &[u8; HASH_OUTPUT_LENGTH] {
+		return &self.element_hash;
+	}
+
+	/// Returns an immutable reference to the path
+	/// of this element.
+	pub fn get_path(&self) -> &String {
+		return &self.path;
 	}
 
 	/// Convert EDElement to a String representation, this
