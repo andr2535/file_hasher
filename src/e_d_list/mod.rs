@@ -9,17 +9,10 @@ use super::*;
 use self::chrono::prelude::*;
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}};
+use interfacers::UserInterface;
 
 const CHECKSUM_PREFIX:&str = "CHECKSUM = ";
 const HASH_OUTPUT_LENGTH: usize = 32;
-
-pub trait EDListInterface {
-	/// Gives the message to the user, and returns
-	/// the users answer to the EDList without the
-	/// endline character.
-	fn get_user_answer(&self, message: &str) -> String;
-	fn send_message(&self, message: &str);
-}
 
 enum LineType {
 	Checksum(String),
@@ -51,8 +44,8 @@ impl EDList {
 	/// and interprets it as an EDList.
 	/// If it is unable to open the file, it may ask the user
 	/// whether it should create a new file, using an object implementing
-	/// EDListInterface.
-	pub fn open(list_interface: impl EDListInterface, banlist: PathBanlist) -> Result<EDList, String> {
+	/// UserInterface.
+	pub fn open(list_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, String> {
 		let mut e_d_list = EDList::new(banlist);
 		let file = match File::open("./file_hasher_files/file_hashes") {
 			Ok(file) => file,
@@ -122,7 +115,7 @@ impl EDList {
 	/// added to the list yet, and puts them into the list.
 	/// It gives messages of all the elements it is hashing
 	/// to the list_interface, while it is in progress.
-	pub fn create(&mut self, list_interface: impl EDListInterface) -> Result<(), String> {
+	pub fn create(&mut self, list_interface: impl UserInterface) -> Result<(), String> {
 		let mut already_in_list = std::collections::HashSet::new();
 		for element in &self.element_list {
 			already_in_list.insert(element.get_path().clone());

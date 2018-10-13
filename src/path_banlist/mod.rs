@@ -2,6 +2,7 @@ extern crate blake2;
 
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashSet};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
+use interfacers::UserInterface;
 
 const CHECKSUM_PREFIX:&str = "CHECKSUM = ";
 const HASH_OUTPUT_LENGTH:usize = 32;
@@ -12,12 +13,6 @@ enum LineType {
 	BannedPath
 }
 
-/// The trait Answer is used for handling the user input, when
-/// they need to figure out how to proceed.
-pub trait Answer {
-	fn get_answer(&self, message:String) -> bool;
-}
-
 #[derive(Debug)]
 /// PathBanlist is a HashSet that contains all the paths that
 /// should not be hashed by the EDList objects.
@@ -25,28 +20,28 @@ pub struct PathBanlist {
 	banned_paths:HashSet<String>
 }
 impl PathBanlist {
-	/// Requires an object implementing the trait Answer also defined in 
+	/// Requires an object implementing the trait UserInterface also defined in 
 	/// this file.
 	/// Attempts to open the banlist file from ./file_hasher_files/banlist
-	/// May use the given object implementing Answer, to ask the user to
+	/// May use the given object implementing UserInterface, to ask the user to
 	/// give input if an issue arises.
 	/// If attempts go wrong, the funtion will return a string, with a
 	/// description of the problem.
-	pub fn open(answer: impl Answer) -> Result<PathBanlist, String> {
+	pub fn open(banlist_interfacer: impl UserInterface) -> Result<PathBanlist, String> {
 		let file = match File::open("./file_hasher_files/banlist") {
 			Ok(file) => file,
 			Err(err) => {
-				let create_new = answer.get_answer(
-				                 format!("banlist file could not be opened, error message = {}\
-				                          \nDo you wish to create a new banlist?", err));
-				if create_new {
-					match PathBanlist::new(answer) {
-						Ok(banlist) => return Ok(banlist),
-						Err(err) => return Err(err)
+				loop {
+					let create_new = banlist_interfacer.get_user_answer(
+						&format!("banlist file could not be opened, error message = {}\
+						\nDo you wish to create a new banlist? YES/NO", err));
+					if create_new == "YES" {
+						match PathBanlist::new(banlist_interfacer) {
+							Ok(banlist) => return Ok(banlist),
+							Err(err) => return Err(err)
+						}
 					}
-				}
-				else {
-					return Result::Err(String::from("banlist file could not be opened"));
+					else if create_new == "NO" {return Result::Err(String::from("banlist file could not be opened"));}
 				}
 			}
 		};
@@ -102,11 +97,11 @@ impl PathBanlist {
 	}
 	/// Attempts to create a new banlist file, and then opens it using
 	/// the open function.
-	/// Requires a object that implements Answer, so that it can send it
+	/// Requires a object that implements UserInterface, so that it can send it
 	/// on to the open function.
 	/// When it fails, it returns a string containing information about
 	/// the error.
-	fn new(answer: impl Answer) -> Result<PathBanlist, String> {
+	fn new(banlist_interfacer: impl UserInterface) -> Result<PathBanlist, String> {
 		match create_dir_all("./file_hasher_files") {
 			Ok(_res) => (),
 			Err(err) => return Err(format!("Error creating file_hasher directory, Error = {}", err))
@@ -132,7 +127,7 @@ impl PathBanlist {
 
 		match write_result {
 			Ok(_len) => {
-				return PathBanlist::open(answer);
+				return PathBanlist::open(banlist_interfacer);
 			}
 			Err(err) => return Err(format!("Error writing checksum to banlist, Error = {}", err))
 		};
