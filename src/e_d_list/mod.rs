@@ -147,11 +147,10 @@ impl EDList {
 	}
 
 	/// Returns a complete list of all files
-	/// from the current running directory.
+	/// from the given root directory.
 	/// Does not follow symbolic links, but symbolic links are indexed
 	/// as a normal file.
 	/// Does not index paths that are in the banlist.
-	/// NOTE THIS IS A STUB
 	fn index(&self, path:&String) -> Result<Vec<String>, String> {
 		let entries = match std::fs::read_dir(&path) {
 			Ok(dirs) => dirs,
