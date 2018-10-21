@@ -65,7 +65,7 @@ impl EDElement {
 	/// It detects automatically whether the path
 	/// refers to a link or a file.
 	pub fn from_path(path:String) -> Result<EDElement, String> {
-		let file = match File::open(&path) {
+		let mut file = match File::open(&path) {
 			Ok(file) => file,
 			Err(err) => return Result::Err(format!("Error opening file {}", err))
 		};
@@ -80,7 +80,7 @@ impl EDElement {
 
 		if metadata.is_file() {
 			// The path is a file.
-			let hash = EDElement::hash_file(file);
+			let hash = EDElement::hash_file(&mut file);
 			let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
 			return Result::Ok(EDElement::from_internal(path, modified_time, file_fields));
 		}
@@ -98,18 +98,74 @@ impl EDElement {
 	/// test_integrity tests the integrity of the EDElement against
 	/// the file or symbolic link it points to.
 	/// If the symbolic_link or file has changed, or there has
-	/// been corruption in the EDElement struct, a string
-	/// containing the error will be given back.
-	/// If not, it returns None.
-	pub fn test_integrity(&self) -> Option<String> {
-
-		Option::Some(String::from("Not implemented yet"))
+	/// been corruption in the EDElement struct, an Result::Err
+	/// containing a string describing the error will be returned.
+	/// If the integrity test went fine, it will return an OK(()).
+	pub fn test_integrity(&self) -> Result<(), String> {
+		let mut file = match File::open(&self.path) {
+			Ok(file) => file,
+			Err(err) => return Err(format!("Error opening file {} for testing, err = {}", &self.path, err))
+		};
+		let metadata = match fs::symlink_metadata(&self.path) {
+			Ok(metadata) => metadata,
+			Err(err) => return Err(format!("Error reading metadata from file {}, err = {}", &self.path, err))
+		};
+		if metadata.is_dir() {return Err(format!("Path {} is a directory, directories cannot be a EDEelement!", &self.path));}
+		
+		let time_changed = {
+			let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+			modified_time != *&self.modified_time
+		};
+		
+		match &self.variant_fields {
+			EDVariantFields::File(file_element) => {
+				let file_hash = EDElement::hash_file(&mut file);
+				if file_hash == file_element.file_hash {
+					if time_changed {
+						return Err(format!("File \"{}\" has a valid checksum, but the time has been changed", &self.path));
+					}
+					else {
+						return Ok(());
+					}
+				}
+				else {
+					if time_changed {
+						return Err(format!("File \"{}\" has an invalid checksum, and it's time has been changed", &self.path));
+					}
+					else {
+						return Err(format!("File \"{}\" has an invalid checksum", &self.path));
+					}
+				}
+			},
+			EDVariantFields::Link(link_element) => {
+				let link_path = match fs::read_link(&self.path).unwrap().to_str() {
+					Some(link_path) => String::from(link_path),
+					None => panic!("link_path is not a valid utf-8 string!")
+				};
+				if link_path == link_element.link_path {
+					if time_changed {
+						return Err(format!("Time changed on link \"{}\", but link has valid target path", &self.path));
+					}
+					else {
+						return Ok(());
+					}
+				}
+				else {
+					if time_changed {
+						return Err(format!("Link \"{}\", has an invalid target path, and it's modified time has changed", &self.path));
+					}
+					else {
+						return Err(format!("Link \"{}\", has an invalid target path", &self.path));
+					}
+				}
+			}
+		}
 	}
 	/// hash_file reads a file, and creates a hash for it in an
 	/// u8 vector, of length HASH_OUTPUT_LENGTH.
 	/// If there is trouble reading the file, hash_file will panic.
 	/// (Probably should be changed in the future)
-	fn hash_file(mut file:File) -> [u8; HASH_OUTPUT_LENGTH] {
+	fn hash_file(file:&mut File) -> [u8; HASH_OUTPUT_LENGTH] {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();

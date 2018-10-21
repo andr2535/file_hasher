@@ -111,11 +111,33 @@ impl EDList {
 		EDList{element_list: Vec::new(), banlist: banlist, checksum: [0u8; HASH_OUTPUT_LENGTH]}
 	}
 
+	/// Tests every element in the lists integrity against
+	/// the real files and links, they refer to.
+	/// Returns a vector with strings describing all the errors.
+	/// Also sends a message to the UserInterface impl, for every
+	/// element that is being tested.
+	pub fn verify(&self, list_interface: &impl UserInterface) -> Vec<String> {
+		let mut error_list = Vec::new();
+		let mut file_count = 0;
+		let list_length = &self.element_list.len();
+
+		for e_d_element in &self.element_list {
+			file_count += 1;
+			list_interface.send_message(&format!("Verifying file {} of {}, path: {}", file_count, list_length, e_d_element.get_path()));
+
+			match e_d_element.test_integrity() {
+				Ok(_) => (),
+				Err(error_message) => error_list.push(error_message)
+			}
+		}
+		error_list
+	}
+
 	/// Finds all the files that have not been
 	/// added to the list yet, and puts them into the list.
 	/// It gives messages of all the elements it is hashing
 	/// to the list_interface, while it is in progress.
-	pub fn create(&mut self, list_interface: impl UserInterface) -> Result<(), String> {
+	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<(), String> {
 		let mut already_in_list = std::collections::HashSet::new();
 		for element in &self.element_list {
 			already_in_list.insert(element.get_path().clone());
