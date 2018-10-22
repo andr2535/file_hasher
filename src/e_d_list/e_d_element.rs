@@ -65,22 +65,21 @@ impl EDElement {
 	/// It detects automatically whether the path
 	/// refers to a link or a file.
 	pub fn from_path(path:String) -> Result<EDElement, String> {
-		let mut file = match File::open(&path) {
-			Ok(file) => file,
-			Err(err) => return Result::Err(format!("Error opening file {}", err))
-		};
-
 		let metadata = match fs::symlink_metadata(&path) {
 			Ok(metadata) => metadata,
-			Err(err) => panic!(format!("Error getting file metadata {}", err))
+			Err(err) => panic!(format!("Error getting metadata of path \"{}\", error = {}", path, err))
 		};
 
 		if metadata.is_dir() {return Result::Err(String::from("The path is a directory!"));}
 		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 
 		if metadata.is_file() {
+			let file = match File::open(&path) {
+				Ok(file) => file,
+				Err(err) => return Result::Err(format!("Error opening path \"{}\", error = {}", path, err))
+			};
 			// The path is a file.
-			let hash = EDElement::hash_file(&mut file);
+			let hash = EDElement::hash_file(file);
 			let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
 			return Result::Ok(EDElement::from_internal(path, modified_time, file_fields));
 		}
@@ -102,10 +101,6 @@ impl EDElement {
 	/// containing a string describing the error will be returned.
 	/// If the integrity test went fine, it will return an OK(()).
 	pub fn test_integrity(&self) -> Result<(), String> {
-		let mut file = match File::open(&self.path) {
-			Ok(file) => file,
-			Err(err) => return Err(format!("Error opening file {} for testing, err = {}", &self.path, err))
-		};
 		let metadata = match fs::symlink_metadata(&self.path) {
 			Ok(metadata) => metadata,
 			Err(err) => return Err(format!("Error reading metadata from file {}, err = {}", &self.path, err))
@@ -119,7 +114,11 @@ impl EDElement {
 		
 		match &self.variant_fields {
 			EDVariantFields::File(file_element) => {
-				let file_hash = EDElement::hash_file(&mut file);
+				let mut file = match File::open(&self.path) {
+					Ok(file) => file,
+					Err(err) => return Err(format!("Error opening file {} for testing, err = {}", &self.path, err))
+				};
+				let file_hash = EDElement::hash_file(file);
 				if file_hash == file_element.file_hash {
 					if time_changed {
 						return Err(format!("File \"{}\" has a valid checksum, but the time has been changed", &self.path));
@@ -165,7 +164,7 @@ impl EDElement {
 	/// u8 vector, of length HASH_OUTPUT_LENGTH.
 	/// If there is trouble reading the file, hash_file will panic.
 	/// (Probably should be changed in the future)
-	fn hash_file(file:&mut File) -> [u8; HASH_OUTPUT_LENGTH] {
+	fn hash_file(mut file:File) -> [u8; HASH_OUTPUT_LENGTH] {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
