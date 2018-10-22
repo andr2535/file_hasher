@@ -24,9 +24,10 @@ fn main() {
 	let interfacer = interfacers::UserMessenger::new();
 
 	loop {
-		let answer = &interfacer.get_user_answer("1. Create\n2. Verify");
+		println!("Enter one of the following operations:");
+		let answer = &interfacer.get_user_answer("Create\nVerify").to_lowercase();
 		match answer.as_str() {
-			"1" => {
+			"create" => {
 				match edlist.create(&interfacer) {
 					Ok(_res) => (),
 					Err(err) => {
@@ -36,7 +37,7 @@ fn main() {
 				}
 				break;
 			},
-			"2" => {
+			"verify" => {
 				let error_list = edlist.verify(&interfacer);
 				if error_list.len() > 0 {
 					println!("Errors found:");
