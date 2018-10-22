@@ -93,6 +93,21 @@ impl EDElement {
 			return Result::Ok(EDElement::from_internal(path, modified_time, link_fields));
 		}
 	}
+	/// test_metadata makes a cursory search for if the path
+	/// has been deleted, or if the modified time of the path
+	/// has been changed.
+	pub fn test_metadata(&self) -> Result<(), String> {
+		let metadata = match fs::symlink_metadata(&self.path) {
+			Ok(metadata) => metadata,
+			Err(_err) => return Err(format!("Could not open path \"{}\"", &self.path))
+		};
+		if metadata.is_dir() {return Err(format!("Path \"{}\" is a directory", &self.path))}
+		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+		if modified_time != self.modified_time {
+			return Err(format!("File with path \"{}\", has a different modified time than expected", &self.path));
+		}
+		Ok(())
+	}
 
 	/// test_integrity tests the integrity of the EDElement against
 	/// the file or symbolic link it points to.
@@ -191,6 +206,20 @@ impl EDElement {
 	/// of this element.
 	pub fn get_path(&self) -> &String {
 		return &self.path;
+	}
+
+	pub fn clone(&self) -> EDElement {
+		match &self.variant_fields {
+			EDVariantFields::File(file_element) => {
+				let file_variant = EDVariantFields::File(FileElement{file_hash: file_element.file_hash});
+				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, file_variant);
+			},
+			EDVariantFields::Link(link_element) => {
+				let link_variant = EDVariantFields::Link(LinkElement{link_path: String::from(link_element.link_path.as_str())});
+				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, link_variant);
+			}
+		}
+
 	}
 
 	/// Convert EDElement to a String representation, this

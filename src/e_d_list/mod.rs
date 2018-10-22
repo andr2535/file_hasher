@@ -137,6 +137,66 @@ impl EDList {
 		error_list
 	}
 
+	/// Finds all the paths that are deleted, or modified
+	/// and removes them from the list, if the user agrees.
+	pub fn delete(&mut self, list_interface: &impl UserInterface) {
+		let mut new_list:Vec<EDElement> = Vec::with_capacity(self.element_list.len());
+		let mut cont_delete = false;
+		let mut deleted_paths:Vec<String> = Vec::new();
+
+		let delete_element = |deleted_paths:&mut Vec<String>, checksum:&mut[u8; HASH_OUTPUT_LENGTH], e_d_element:&EDElement| {
+			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().iter()) {
+				*dest ^= hash_part;
+			}
+			deleted_paths.push(String::from(e_d_element.get_path().as_str()));
+		};
+
+		for e_d_element in &self.element_list {
+			match e_d_element.test_metadata() {
+				Ok(()) => {
+					new_list.push(e_d_element.clone());
+				},
+				Err(err) => {
+					loop {
+						let mut break_loop = true;
+						if cont_delete {
+							delete_element(&mut deleted_paths, &mut self.checksum, &e_d_element);
+						}
+						else {
+							let answer = list_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
+							match answer.as_str() {
+								"YES" => {
+									delete_element(&mut deleted_paths, &mut self.checksum, &e_d_element);
+								},
+								"NO" => {
+									new_list.push(e_d_element.clone());
+								},
+								"CONTYES" => {
+									cont_delete = true;
+									delete_element(&mut deleted_paths, &mut self.checksum, &e_d_element);
+								}
+								_ => {
+									break_loop = false;
+								}
+							}
+						}
+						if break_loop {break;}
+					}
+				}
+			}
+		}
+		if deleted_paths.len() > 0 {
+			let length = deleted_paths.len();
+			list_interface.send_message(&format!("Deleted paths, amount = {}", length));
+			let mut index = 0;
+			for deleted_path in deleted_paths {
+				index += 1;
+				list_interface.send_message(&format!("{} of {}: {}", index, length, deleted_path));
+			}
+		}
+		self.element_list = new_list;
+	}
+
 	/// Finds all the files that have not been
 	/// added to the list yet, and puts them into the list.
 	/// It gives messages of all the elements it is hashing

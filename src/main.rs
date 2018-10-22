@@ -24,8 +24,9 @@ fn main() {
 	let interfacer = interfacers::UserMessenger::new();
 
 	loop {
+		let mut break_bool = true;
 		println!("Enter one of the following operations:");
-		let answer = &interfacer.get_user_answer("Create\nVerify").to_lowercase();
+		let answer = &interfacer.get_user_answer("Create\nVerify\nDelete").to_lowercase();
 		match answer.as_str() {
 			"create" => {
 				match edlist.create(&interfacer) {
@@ -35,7 +36,6 @@ fn main() {
 						return;
 					}
 				}
-				break;
 			},
 			"verify" => {
 				let error_list = edlist.verify(&interfacer);
@@ -48,10 +48,16 @@ fn main() {
 				else {
 					println!("No errors found!");
 				}
-				break;
 			},
-			_ => println!("Invalid value entered, try again!")
+			"delete" => {
+				edlist.delete(&interfacer);
+			},
+			_ => {
+				break_bool = false;
+				println!("Invalid value entered, try again!");
+			}
 		}
+		if break_bool {break;}
 	}
 
 	match edlist.write_hash_file() {
