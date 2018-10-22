@@ -123,11 +123,15 @@ impl EDList {
 
 		for e_d_element in &self.element_list {
 			file_count += 1;
-			list_interface.send_message(&format!("Verifying file {} of {}, path: {}", file_count, list_length, e_d_element.get_path()));
+			let path = e_d_element.get_path();
+			list_interface.send_message(&format!("Verifying file {} of {}, path: {}", file_count, list_length, path));
 
 			match e_d_element.test_integrity() {
 				Ok(_) => (),
 				Err(error_message) => error_list.push(error_message)
+			}
+			if self.banlist.is_in_banlist(path) {
+				error_list.push(format!("\"{}\" is in the banlist.", path));
 			}
 		}
 		error_list
