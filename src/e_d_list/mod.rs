@@ -174,11 +174,21 @@ impl EDList {
 		};
 
 		for e_d_element in &self.element_list {
-			match e_d_element.test_metadata() {
-				Ok(()) => {
+			let mut error = None;
+			if self.banlist.is_in_banlist(e_d_element.get_path()) {
+				error = Some(format!("Path {} is in the banlist", e_d_element.get_path()));
+			}
+			if error.is_none() {
+				match e_d_element.test_metadata() {
+					Ok(()) => (),
+					Err(err) => error = Some(err)
+				}
+			}
+			match error {
+				None => {
 					new_list.push(e_d_element.clone());
 				},
-				Err(err) => {
+				Some(err) => {
 					loop {
 						let mut break_loop = true;
 						if cont_delete {
