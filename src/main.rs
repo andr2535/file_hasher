@@ -4,6 +4,18 @@ mod interfacers;
 
 use interfacers::UserInterface;
 
+fn handle_verify_error_list(error_list:Vec<String>) {
+	if error_list.len() > 0 {
+		println!("Errors found:");
+		for error in error_list {
+			println!("{}", error);
+		}
+	}
+	else {
+		println!("No errors found!");
+	}
+}
+
 fn main() {
 	let banlist = match path_banlist::PathBanlist::open(interfacers::UserMessenger::new()) {
 		Ok(result) => result,
@@ -26,7 +38,7 @@ fn main() {
 	loop {
 		let mut break_bool = true;
 		println!("Enter one of the following operations:");
-		let answer = &interfacer.get_user_answer("Create\nVerify\nDelete").to_lowercase();
+		let answer = &interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete").to_lowercase();
 		match answer.as_str() {
 			"create" => {
 				match edlist.create(&interfacer) {
@@ -38,16 +50,12 @@ fn main() {
 				}
 			},
 			"verify" => {
-				let error_list = edlist.verify(&interfacer);
-				if error_list.len() > 0 {
-					println!("Errors found:");
-					for error in error_list {
-						println!("{}", error);
-					}
-				}
-				else {
-					println!("No errors found!");
-				}
+				handle_verify_error_list(edlist.verify(None, &interfacer));
+				
+			},
+			"verifysub" => {
+				let prefix = interfacer.get_user_answer("Enter your path prefix");
+				handle_verify_error_list(edlist.verify(Some(prefix), &interfacer));
 			},
 			"delete" => {
 				edlist.delete(&interfacer);

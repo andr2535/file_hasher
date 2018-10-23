@@ -116,12 +116,34 @@ impl EDList {
 	/// Returns a vector with strings describing all the errors.
 	/// Also sends a message to the UserInterface impl, for every
 	/// element that is being tested.
-	pub fn verify(&self, list_interface: &impl UserInterface) -> Vec<String> {
+	pub fn verify(&self, prefix:Option<String>, list_interface: &impl UserInterface) -> Vec<String> {
+		match prefix {
+			Some(prefix) => {
+				let prefix_u8 = prefix.as_bytes();
+				let element_list = &self.element_list;
+				let mut elements_with_prefix:Vec<EDElement> = Vec::with_capacity(element_list.len());
+				for e_d_element in element_list {
+					let path_u8 = e_d_element.get_path().as_bytes();
+					if path_u8.len() >= prefix_u8.len() {
+						if &path_u8[0..prefix_u8.len()] == prefix_u8 {
+							elements_with_prefix.push(e_d_element.clone());
+						}
+					}
+				}
+				self.verify_loop(&elements_with_prefix, list_interface)
+			}
+			None => self.verify_loop(&self.element_list, list_interface)
+		}
+	}
+
+	/// Goes through all the elements in the given element_list.
+	/// It returns a list of all the errors in a string format.
+	fn verify_loop(&self, element_list:&Vec<EDElement>, list_interface: &impl UserInterface) -> Vec<String> {
 		let mut error_list = Vec::new();
 		let mut file_count = 0;
-		let list_length = &self.element_list.len();
+		let list_length = element_list.len();
 
-		for e_d_element in &self.element_list {
+		for e_d_element in element_list {
 			file_count += 1;
 			let path = e_d_element.get_path();
 			list_interface.send_message(&format!("Verifying file {} of {} = {}", file_count, list_length, path));
