@@ -161,6 +161,9 @@ impl EDList {
 
 	/// Finds all the paths that are deleted, or modified
 	/// and removes them from the list, if the user agrees.
+	/// Also removes files that has a prefix in the banlist.
+	/// If the file has a prefix in the banlist, we do not test
+	/// its metadata.
 	pub fn delete(&mut self, list_interface: &impl UserInterface) {
 		let mut new_list:Vec<EDElement> = Vec::with_capacity(self.element_list.len());
 		let mut cont_delete = false;
@@ -262,6 +265,29 @@ impl EDList {
 		}
 
 		Ok(())
+	}
+
+	/// Sort this EDList according to the paths of the EDElements.
+	pub fn sort(&mut self) {
+		use std::cmp::Ordering;
+		
+		self.element_list.sort_unstable_by(|a:&EDElement,b:&EDElement| {
+			for (a,b) in a.get_path().chars().zip(b.get_path().chars()) {
+				if a == '/' && b != '/' {
+					return Ordering::Less;
+				}
+				if a != '/' && b == '/' {
+					return Ordering::Greater;
+				}
+				let char_compare_enum = a.cmp(&b);
+				match char_compare_enum {
+					Ordering::Equal => (),
+					_ => return char_compare_enum
+				}
+			}
+
+			std::cmp::Ordering::Equal
+		});
 	}
 
 	/// Returns a complete list of all files

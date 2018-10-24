@@ -38,7 +38,7 @@ fn main() {
 	loop {
 		let mut break_bool = true;
 		println!("Enter one of the following operations:");
-		let answer = &interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete").to_lowercase();
+		let answer = &interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\nSort").to_lowercase();
 		match answer.as_str() {
 			"create" => {
 				match edlist.create(&interfacer) {
@@ -59,6 +59,9 @@ fn main() {
 			},
 			"delete" => {
 				edlist.delete(&interfacer);
+			},
+			"sort" => {
+				edlist.sort();
 			},
 			_ => {
 				break_bool = false;
