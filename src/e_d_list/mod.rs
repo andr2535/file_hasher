@@ -270,23 +270,43 @@ impl EDList {
 	/// Sort this EDList according to the paths of the EDElements.
 	pub fn sort(&mut self) {
 		use std::cmp::Ordering;
-		
 		self.element_list.sort_unstable_by(|a:&EDElement,b:&EDElement| {
-			for (a,b) in a.get_path().chars().zip(b.get_path().chars()) {
-				if a == '/' && b != '/' {
-					return Ordering::Less;
-				}
-				if a != '/' && b == '/' {
-					return Ordering::Greater;
-				}
-				let char_compare_enum = a.cmp(&b);
-				match char_compare_enum {
-					Ordering::Equal => (),
-					_ => return char_compare_enum
+			let mut split_a = a.get_path().split('/');
+			let mut split_b = b.get_path().split('/');
+
+			let mut cmp_state = Ordering::Equal;
+			{
+				let split_a = &mut split_a;
+				let split_b = &mut split_b;
+
+				for (a,b) in split_a.zip(split_b) {
+					if cmp_state != Ordering::Equal {
+						// If we get here then both are subdirectories, with different roots.
+						return cmp_state;
+					}
+					let cmp = a.cmp(&b);
+					if cmp_state == Ordering::Equal {
+						cmp_state = cmp;
+					}
+					
 				}
 			}
+			match split_a.next() {
+				Some(_block) => {
+					// If we get here, then a has a next, but b doesn't
+					return Ordering::Greater;
+				},
+				None => ()
+			}
+			match split_b.next() {
+				Some(_block) => {
+					// If we get here, then b has a next, but a doesn't
+					return Ordering::Less;
+				},
+				None => ()
+			}
 
-			std::cmp::Ordering::Equal
+			cmp_state
 		});
 	}
 
