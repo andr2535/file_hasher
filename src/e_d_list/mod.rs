@@ -275,37 +275,40 @@ impl EDList {
 			let mut split_b = b.get_path().split('/');
 
 			let mut cmp_state = Ordering::Equal;
-			{
-				let split_a = &mut split_a;
-				let split_b = &mut split_b;
+			
+			let mut a_next = split_a.next();
+			let mut b_next = split_b.next();
+			loop {
+				let a = match a_next {Some(a) => a, None => break};
+				let b = match b_next {Some(b) => b, None => break};
 
-				for (a,b) in split_a.zip(split_b) {
-					if cmp_state != Ordering::Equal {
-						// If we get here then both are subdirectories, with different roots.
-						return cmp_state;
-					}
-					let cmp = a.cmp(&b);
-					if cmp_state == Ordering::Equal {
-						cmp_state = cmp;
-					}
-					
+				if cmp_state != Ordering::Equal {
+					// If we get here then both are subdirectories, with different roots.
+					return cmp_state;
 				}
+				let cmp = a.cmp(b);
+				if cmp_state == Ordering::Equal {
+					cmp_state = cmp;
+				}
+				
+				a_next = split_a.next();
+				b_next = split_b.next();
 			}
-			match split_a.next() {
+			
+			match a_next {
 				Some(_block) => {
 					// If we get here, then a has a next, but b doesn't
 					return Ordering::Greater;
 				},
 				None => ()
 			}
-			match split_b.next() {
+			match b_next {
 				Some(_block) => {
 					// If we get here, then b has a next, but a doesn't
 					return Ordering::Less;
 				},
 				None => ()
 			}
-
 			cmp_state
 		});
 	}
