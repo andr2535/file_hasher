@@ -38,7 +38,7 @@ fn main() {
 	loop {
 		let mut break_bool = true;
 		println!("Enter one of the following operations:");
-		let answer = &interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\nSort").to_lowercase();
+		let answer = &interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\nSort\nDuplicates").to_lowercase();
 		match answer.as_str() {
 			"create" => {
 				match edlist.create(&interfacer) {
@@ -62,6 +62,9 @@ fn main() {
 			},
 			"sort" => {
 				edlist.sort();
+			},
+			"duplicates" => {
+				edlist.find_duplicates(&interfacer);
 			},
 			_ => {
 				break_bool = false;

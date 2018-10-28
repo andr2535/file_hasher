@@ -2,26 +2,26 @@ extern crate blake2;
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 
-const HASH_OUTPUT_LENGTH: usize = 32;
+pub const HASH_OUTPUT_LENGTH: usize = 32;
 
 #[derive(Debug)]
 /// FileElement is a struct that contains the fields that
 /// a file needs, but a symbolic link does not need.
-struct FileElement {
-	file_hash: [u8; HASH_OUTPUT_LENGTH]
+pub struct FileElement {
+	pub file_hash: [u8; HASH_OUTPUT_LENGTH]
 }
 
 #[derive(Debug)]
 /// LinkElement is a struct that contains the fields, that
 /// a symbolic link needs, that a file does not need.
-struct LinkElement {
-	link_path: String
+pub struct LinkElement {
+	pub link_target: String
 }
 
 #[derive(Debug)]
 /// EDVariantFields is used to manage whether we are storing
 /// a file or a symbolic link.
-enum EDVariantFields {
+pub enum EDVariantFields {
 	File(FileElement),
 	Link(LinkElement)
 }
@@ -54,7 +54,7 @@ impl EDElement {
 		hasher.process(modified_time.to_string().as_bytes());
 		match &variant_fields {
 			EDVariantFields::File(file) => hasher.process(&file.file_hash),
-			EDVariantFields::Link(link) => hasher.process(link.link_path.as_bytes())
+			EDVariantFields::Link(link) => hasher.process(link.link_target.as_bytes())
 		}
 		let mut element_hash = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut element_hash).unwrap();
@@ -89,7 +89,7 @@ impl EDElement {
 				Some(link_path) => String::from(link_path),
 				None => panic!("link_path is not a valid utf-8 string!")
 			};
-			let link_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
+			let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, link_fields));
 		}
 	}
@@ -156,7 +156,7 @@ impl EDElement {
 					Some(link_path) => String::from(link_path),
 					None => panic!("link_path is not a valid utf-8 string!")
 				};
-				if link_path == link_element.link_path {
+				if link_path == link_element.link_target {
 					if time_changed {
 						return Err(format!("Time changed on link \"{}\", but link has valid target path", &self.path));
 					}
@@ -208,6 +208,10 @@ impl EDElement {
 		return &self.path;
 	}
 
+	pub fn get_variant(&self) -> &EDVariantFields {
+		return &self.variant_fields;
+	}
+
 	pub fn clone(&self) -> EDElement {
 		match &self.variant_fields {
 			EDVariantFields::File(file_element) => {
@@ -215,7 +219,7 @@ impl EDElement {
 				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, file_variant);
 			},
 			EDVariantFields::Link(link_element) => {
-				let link_variant = EDVariantFields::Link(LinkElement{link_path: String::from(link_element.link_path.as_str())});
+				let link_variant = EDVariantFields::Link(LinkElement{link_target: String::from(link_element.link_target.as_str())});
 				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, link_variant);
 			}
 		}
@@ -228,13 +232,13 @@ impl EDElement {
 	pub fn to_string(&self) -> String {
 		let variant_fields = match &self.variant_fields {
 			EDVariantFields::File(file) => {
-				let mut file_hash = String::new();
+				let mut file_hash = String::with_capacity(HASH_OUTPUT_LENGTH*2);
 				for element in file.file_hash.into_iter(){
 					file_hash += &format!("{:02X}", element);
 				}
 				format!("file({})", file_hash)
 			},
-			EDVariantFields::Link(link) => format!("link({})", link.link_path.replace("\\", "\\\\").replace(")", "\\)"))
+			EDVariantFields::Link(link) => format!("link({})", link.link_target.replace("\\", "\\\\").replace(")", "\\)"))
 		};
 		format!("[{},{},{}]", self.path.replace("\\", "\\\\").replace(",", "\\,"), self.modified_time, variant_fields)
 	}
@@ -370,7 +374,7 @@ impl EDElement {
 		else {
 			// If variant_string is not file, it must be "link".
 			// Create Result with EDElement, that has a LinkElement.
-			let variant_fields = EDVariantFields::Link(LinkElement{link_path: link_path});
+			let variant_fields = EDVariantFields::Link(LinkElement{link_target: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
 	}

@@ -3,9 +3,9 @@ extern crate blake2;
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 use interfacers::UserInterface;
+use e_d_list::e_d_element;
 
 const CHECKSUM_PREFIX:&str = "CHECKSUM = ";
-const HASH_OUTPUT_LENGTH:usize = 32;
 
 enum LineType {
 	Comment,
@@ -53,7 +53,7 @@ impl PathBanlist {
 		};
 		let buf_reader = BufReader::new(file);
 		
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2b::new(e_d_element::HASH_OUTPUT_LENGTH).unwrap();
 		let mut checksum: Option<String> = Option::None;
 		let mut banned_paths: HashMap<char, CharMapper> = HashMap::new();
 
@@ -119,7 +119,7 @@ impl PathBanlist {
 			Err(err) => return Err(format!("Error creating file, Error = {}", err))
 		};
 		
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2b::new(e_d_element::HASH_OUTPUT_LENGTH).unwrap();
 		let def_banned_list = ["./lost+found/", "./.Trash-1000/", "./file_hasher_files/"];
 
 		for string in def_banned_list.iter() {
@@ -141,10 +141,10 @@ impl PathBanlist {
 	/// Converts a Blake2b object into a string.
 	/// The hash is output in capital hexadecimal letters.
 	pub fn blake2_to_string(hasher:Blake2b) -> String {
-		let mut hash = [0u8; HASH_OUTPUT_LENGTH];
+		let mut hash = [0u8; e_d_element::HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut hash).unwrap();
 
-		let mut hash_string = String::with_capacity(HASH_OUTPUT_LENGTH*2);
+		let mut hash_string = String::with_capacity(e_d_element::HASH_OUTPUT_LENGTH*2);
 		for byte in hash.iter() {
 			hash_string.push_str(&format!("{:02X}", byte));
 		}

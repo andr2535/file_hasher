@@ -3,16 +3,15 @@ extern crate blake2;
 
 pub mod e_d_element;
 
-use self::e_d_element::EDElement;
+use self::e_d_element::{EDElement, HASH_OUTPUT_LENGTH};
 use self::path_banlist::PathBanlist;
-use super::*;
-use self::chrono::prelude::*;
+use super::{path_banlist, std};
+use self::chrono::prelude::{DateTime, Local};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
-use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}};
+use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use interfacers::UserInterface;
 
 const CHECKSUM_PREFIX:&str = "CHECKSUM = ";
-const HASH_OUTPUT_LENGTH: usize = 32;
 
 enum LineType {
 	Checksum(String),
@@ -311,6 +310,64 @@ impl EDList {
 			}
 			cmp_state
 		});
+	}
+
+	/// Sends a list of all the links that have the same
+	/// link_target as at least one other link
+	/// to the struct implementing UserInterface.
+	/// 
+	/// Also sends a list of all the files that have the
+	/// same file_hash as at least one other file to the
+	/// struct implementing UserInterface.
+	pub fn find_duplicates(&self, list_interface: &impl UserInterface) {
+		use std::collections::hash_map::Entry;
+		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::new();
+		let mut file_dups:HashMap<[u8; e_d_element::HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::new();
+		for element in &self.element_list {
+			match element.get_variant() {
+				e_d_element::EDVariantFields::File(file) => {
+					match file_dups.entry(file.file_hash) {
+						Entry::Occupied(entry) => {
+							entry.into_mut().push(element);
+						},
+						Entry::Vacant(entry) => {
+							entry.insert(vec!(element));
+						}
+					}
+				},
+				e_d_element::EDVariantFields::Link(link) => {
+					match link_dups.entry(&link.link_target) {
+						Entry::Occupied(entry) => {
+							entry.into_mut().push(element);
+						},
+						Entry::Vacant(entry) => {
+							entry.insert(vec!(element));
+						}
+					}
+				}
+			}
+		}
+
+		list_interface.send_message("Links with same target path:");
+		for (key, vector) in link_dups {
+			if vector.len() <= 1 {continue;}
+			list_interface.send_message(&format!("    links with target path \"{}\":", key));
+			for element in vector {
+				list_interface.send_message(&format!("        {}", element.get_path()));
+			}
+		}
+		list_interface.send_message("Files with the same checksum:");
+		for (hash, vector) in file_dups {
+			if vector.len() <= 1 {continue;}
+			let mut hash_str = String::with_capacity(HASH_OUTPUT_LENGTH*2);
+			for byte in hash.iter() {
+				hash_str += &format!("{:02X}", byte);
+			}
+			list_interface.send_message(&format!("    Files with checksum = \"{}\":", hash_str));
+			for element in vector {
+				list_interface.send_message(&format!("        {}", element.get_path()));
+			}
+		}
 	}
 
 	/// Returns a complete list of all files
