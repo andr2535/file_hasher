@@ -33,10 +33,15 @@ enum LineType {
 /// file. Also the saved checksum is used in the memory,
 /// such that it is very hard for a memory error to cause
 /// data corruption in the file after a reload.
+/// 
+/// The verified boolean is used to be sure that
+/// the checksum test went well(in case of the program counter
+/// skipping or some case similar)
 pub struct EDList {
 	element_list: Vec<EDElement>,
 	banlist: path_banlist::PathBanlist,
-	checksum: [u8; HASH_OUTPUT_LENGTH]
+	checksum: [u8; HASH_OUTPUT_LENGTH],
+	verified: bool
 }
 impl EDList {
 	/// Attempts to open the ./file_hasher_files/file_hashes file
@@ -52,7 +57,11 @@ impl EDList {
 				loop{
 					let answer = list_interface
 						.get_user_answer(&format!("Could not open file_hashes, err = {}\nDo you wish to create a new file? YES/NO", err));
-					if answer == "YES" {return Ok(e_d_list);}
+					if answer == "YES" {
+						list_interface.send_message("Created empty list");
+						e_d_list.verified = true;
+						return Ok(e_d_list);
+					}
 					else if answer == "NO" {break;}
 				}
 				return Err(String::from("Error opening file_hashes"));
@@ -93,9 +102,11 @@ impl EDList {
 		
 		match checksum {
 			Some(checksum) => {
-				if checksum != PathBanlist::blake2_to_string(hasher) {
+				let generated_checksum = PathBanlist::blake2_to_string(hasher);
+				if checksum != generated_checksum {
 					return Err(String::from("checksum in file_hashes is not valid!"));
 				}
+				e_d_list.verified = checksum == generated_checksum;
 			}
 			None => return Err(String::from("file_hashes missing checksum!"))
 		}
@@ -107,7 +118,7 @@ impl EDList {
 	}
 	/// Creates a new empty EDList.
 	fn new(banlist: PathBanlist) -> EDList {
-		EDList{element_list: Vec::new(), banlist: banlist, checksum: [0u8; HASH_OUTPUT_LENGTH]}
+		EDList{element_list: Vec::new(), banlist: banlist, checksum: [0u8; HASH_OUTPUT_LENGTH], verified:false}
 	}
 
 	/// Tests every element in the lists integrity against
@@ -116,6 +127,7 @@ impl EDList {
 	/// Also sends a message to the UserInterface impl, for every
 	/// element that is being tested.
 	pub fn verify(&self, prefix:Option<String>, list_interface: &impl UserInterface) -> Vec<String> {
+		if !self.verified {panic!("EDList is not verified!");}
 		match prefix {
 			Some(prefix) => {
 				let prefix_u8 = prefix.as_bytes();
@@ -164,6 +176,7 @@ impl EDList {
 	/// If the file has a prefix in the banlist, we do not test
 	/// its metadata.
 	pub fn delete(&mut self, list_interface: &impl UserInterface) {
+		if !self.verified {panic!("EDList is not verified!");}
 		let mut new_list:Vec<EDElement> = Vec::with_capacity(self.element_list.len());
 		let mut cont_delete = false;
 		let mut deleted_paths:Vec<String> = Vec::new();
@@ -236,6 +249,7 @@ impl EDList {
 	/// It gives messages of all the elements it is hashing
 	/// to the list_interface, while it is in progress.
 	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<(), String> {
+		if !self.verified {panic!("EDList is not verified!");}
 		let mut already_in_list = std::collections::HashSet::new();
 		for element in &self.element_list {
 			already_in_list.insert(element.get_path().clone());
@@ -268,6 +282,7 @@ impl EDList {
 
 	/// Sort this EDList according to the paths of the EDElements.
 	pub fn sort(&mut self) {
+		if !self.verified {panic!("EDList is not verified!");}
 		use std::cmp::Ordering;
 		self.element_list.sort_unstable_by(|a:&EDElement,b:&EDElement| {
 			let mut split_a = a.get_path().split('/');
@@ -320,6 +335,7 @@ impl EDList {
 	/// same file_hash as at least one other file to the
 	/// struct implementing UserInterface.
 	pub fn find_duplicates(&self, list_interface: &impl UserInterface) {
+		if !self.verified {panic!("EDList is not verified!");}
 		use std::collections::hash_map::Entry;
 		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::new();
 		let mut file_dups:HashMap<[u8; e_d_element::HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::new();

@@ -3,6 +3,9 @@ name = "file_hasher"
 version = "0.1.0"
 authors = ["Andreas Ejdesgaard <andreasejdesgaard@hotmail.com>"]
 
+[profile.release]
+lto = true
+
 [dependencies]
 blake2 = "0.7.1"
 chrono = "0.4.0"
