@@ -431,20 +431,13 @@ impl EDList {
 	}
 
 	fn identify_line(line: &String) -> LineType {
-		let checksum_prefix = String::from(CHECKSUM_PREFIX);
-
 		// Figure out whether line is a checksum.
-		let mut line_checksum = String::with_capacity(checksum_prefix.len());
-		for (checksum_char, line_char) in checksum_prefix.chars().zip(line.chars()) {
-			if checksum_char == line_char {
-				line_checksum.push(line_char);
-			}
-			else {break;}
-		}
-		// If line_checksum length has reached checksum_prefix length, we know that
-		// line_checksum has the CHECKSUM_PREFIX as prefix.
-		if checksum_prefix.len() == line_checksum.len() {
-			return LineType::Checksum(String::from(&line[checksum_prefix.len()..line.len()]));
+		let checksum_prefix_u8 = CHECKSUM_PREFIX.as_bytes();
+		let line_checksum_u8 = line.as_bytes();
+
+		if line_checksum_u8.len() >= checksum_prefix_u8.len() && 
+		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()]{
+			return LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..line.len()]));
 		}
 
 		// If line is not identified as checksum it must be an EDElement.
