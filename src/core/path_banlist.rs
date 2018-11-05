@@ -2,10 +2,8 @@ extern crate blake2;
 
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
-use interfacers::UserInterface;
-use e_d_list::e_d_element;
-
-const CHECKSUM_PREFIX:&str = "CHECKSUM = ";
+use interfacer::UserInterface;
+use super::constants;
 
 enum LineType {
 	Comment,
@@ -53,7 +51,7 @@ impl PathBanlist {
 		};
 		let buf_reader = BufReader::new(file);
 		
-		let mut hasher = Blake2b::new(e_d_element::HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let mut checksum: Option<String> = Option::None;
 		let mut banned_paths: HashMap<char, CharMapper> = HashMap::new();
 
@@ -90,13 +88,13 @@ impl PathBanlist {
 				if hash_string != checksum {
 					return Err(format!("Checksum for banlist is invalid.\n\
 					                    If the current banlist is correct,\nReplace the checksum in the banlist file with the following:\n\
-					                    {}{}", CHECKSUM_PREFIX, hash_string));
+					                    {}{}", constants::CHECKSUM_PREFIX, hash_string));
 				}
 			},
 			None => {
 					return Err(format!("There is no checksum in the banlist file.\n\
 					                    If the current banlist is correct,\nType the following line into the banlist file:\n\
-					                    {}{}", CHECKSUM_PREFIX, hash_string));
+					                    {}{}", constants::CHECKSUM_PREFIX, hash_string));
 			}
 		}
 
@@ -119,7 +117,7 @@ impl PathBanlist {
 			Err(err) => return Err(format!("Error creating file, Error = {}", err))
 		};
 		
-		let mut hasher = Blake2b::new(e_d_element::HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let def_banned_list = ["./lost+found/", "./.Trash-1000/", "./file_hasher_files/"];
 
 		for string in def_banned_list.iter() {
@@ -130,7 +128,7 @@ impl PathBanlist {
 			hasher.process(string.as_bytes());
 		}
 
-		let write_result = file.write(format!("{}{}", CHECKSUM_PREFIX, PathBanlist::blake2_to_string(hasher)).as_bytes());
+		let write_result = file.write(format!("{}{}", constants::CHECKSUM_PREFIX, PathBanlist::blake2_to_string(hasher)).as_bytes());
 
 		match write_result {
 			Ok(_len) => return PathBanlist::open(banlist_interfacer),
@@ -141,10 +139,10 @@ impl PathBanlist {
 	/// Converts a Blake2b object into a string.
 	/// The hash is output in capital hexadecimal letters.
 	pub fn blake2_to_string(hasher:Blake2b) -> String {
-		let mut hash = [0u8; e_d_element::HASH_OUTPUT_LENGTH];
+		let mut hash = [0u8; constants::HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut hash).unwrap();
 
-		let mut hash_string = String::with_capacity(e_d_element::HASH_OUTPUT_LENGTH*2);
+		let mut hash_string = String::with_capacity(constants::HASH_OUTPUT_LENGTH*2);
 		for byte in hash.iter() {
 			hash_string.push_str(&format!("{:02X}", byte));
 		}
@@ -164,7 +162,7 @@ impl PathBanlist {
 		};
 
 		// Figure out whether line is a checksum.
-		let checksum_prefix_u8 = CHECKSUM_PREFIX.as_bytes();
+		let checksum_prefix_u8 = constants::CHECKSUM_PREFIX.as_bytes();
 		let line_checksum_u8 = line.as_bytes();
 
 		if line_checksum_u8.len() >= checksum_prefix_u8.len() && 

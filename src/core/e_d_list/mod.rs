@@ -3,15 +3,14 @@ extern crate blake2;
 
 pub mod e_d_element;
 
-use self::e_d_element::{EDElement, HASH_OUTPUT_LENGTH};
-use self::path_banlist::PathBanlist;
-use super::{path_banlist, std};
+use self::e_d_element::EDElement;
+use super::path_banlist::PathBanlist;
+use core::constants::{HASH_OUTPUT_LENGTH,CHECKSUM_PREFIX};
+
 use self::chrono::prelude::{DateTime, Local};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
-use interfacers::UserInterface;
-
-const CHECKSUM_PREFIX:&str = "CHECKSUM = ";
+use interfacer::UserInterface;
 
 enum LineType {
 	Checksum(String),
@@ -39,7 +38,7 @@ enum LineType {
 /// skipping or some case similar)
 pub struct EDList {
 	element_list: Vec<EDElement>,
-	banlist: path_banlist::PathBanlist,
+	banlist: PathBanlist,
 	checksum: [u8; HASH_OUTPUT_LENGTH],
 	verified: bool
 }
@@ -338,7 +337,7 @@ impl EDList {
 		if !self.verified {panic!("EDList is not verified!");}
 		use std::collections::hash_map::Entry;
 		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::new();
-		let mut file_dups:HashMap<[u8; e_d_element::HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::new();
+		let mut file_dups:HashMap<[u8; HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::new();
 		for element in &self.element_list {
 			match element.get_variant() {
 				e_d_element::EDVariantFields::File(file) => {

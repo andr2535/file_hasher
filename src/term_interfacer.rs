@@ -1,17 +1,4 @@
-use super::std;
-
-
-pub trait UserInterface {
-	/// Gives the message to the user, and returns
-	/// the users answer to the caller without the
-	/// endline character.
-	fn get_user_answer(&self, message: &str) -> String;
-	/// Gives a message, that should be shown to the user,
-	/// but the user can't reply to it.
-	fn send_message(&self, message: &str);
-}
-
-
+use core::interfacer;
 /// UserMessenger is named Messenger, because it
 /// functions as an intermediary between the user and
 /// the file_hasher modules.
@@ -24,7 +11,7 @@ impl UserMessenger {
 		UserMessenger{stdin:stdin}
 	}
 }
-impl UserInterface for UserMessenger {
+impl interfacer::UserInterface for UserMessenger {
 	fn get_user_answer(&self, message: &str) -> String {
 		println!("{}", message);
 		let mut input_string = String::new();

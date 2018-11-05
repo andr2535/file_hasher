@@ -1,8 +1,9 @@
-mod e_d_list;
-mod path_banlist;
-mod interfacers;
+mod core;
+use core::*;
+use core::interfacer::UserInterface;
 
-use interfacers::UserInterface;
+mod term_interfacer;
+use term_interfacer::UserMessenger;
 
 fn handle_verify_error_list(error_list:Vec<String>) {
 	if error_list.len() > 0 {
@@ -17,14 +18,14 @@ fn handle_verify_error_list(error_list:Vec<String>) {
 }
 
 fn main() {
-	let banlist = match path_banlist::PathBanlist::open(interfacers::UserMessenger::new()) {
+	let banlist = match path_banlist::PathBanlist::open(UserMessenger::new()) {
 		Ok(result) => result,
 		Err(err) => {
 			println!("Error opening banlist, Error = {}", err);
 			return;
 		}
 	};
-	let mut edlist = match e_d_list::EDList::open(interfacers::UserMessenger::new(), banlist) {
+	let mut edlist = match e_d_list::EDList::open(UserMessenger::new(), banlist) {
 		Ok(list) => list,
 		Err(err) => {
 			println!("Error opening list, {}", err);
@@ -33,7 +34,7 @@ fn main() {
 	};
 
 
-	let interfacer = interfacers::UserMessenger::new();
+	let interfacer = UserMessenger::new();
 
 	loop {
 		let mut break_bool = true;

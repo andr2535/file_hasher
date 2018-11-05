@@ -2,7 +2,7 @@ extern crate blake2;
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 
-pub const HASH_OUTPUT_LENGTH: usize = 32;
+use core::constants::HASH_OUTPUT_LENGTH;
 
 #[derive(Debug)]
 /// FileElement is a struct that contains the fields that
