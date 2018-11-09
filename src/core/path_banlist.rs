@@ -151,7 +151,7 @@ impl PathBanlist {
 	}
 
 	/// identify_line determines if a line is a comment, a checksum or a banned path.
-	fn identify_line(line: &String) -> LineType {
+	fn identify_line(line: &str) -> LineType {
 		match line.chars().next() {
 			Some(character) => 
 				if character == '#' {
@@ -176,7 +176,7 @@ impl PathBanlist {
 	
 	/// Used internally by the path_banlist open constructor,
 	/// to insert the needed paths into the banlist.
-	fn insert_to_banlist(banlist:&mut HashMap<char, CharMapper>, line:&String) {
+	fn insert_to_banlist(banlist:&mut HashMap<char, CharMapper>, line:&str) {
 		// Unsafe variables.
 		let mut last_hashmap:Option<*mut HashMap<char, CharMapper>> = None;
 		let mut hashmap = banlist as *mut HashMap<char, CharMapper>;
@@ -238,7 +238,7 @@ impl PathBanlist {
 	/// of its prefixes defined in the banlist.
 	/// Returns true, if there is such a prefix, else it
 	/// returns false.
-	pub fn is_in_banlist(&self, path: &String) -> bool {
+	pub fn is_in_banlist(&self, path: &str) -> bool {
 		let mut hashmap = &self.banned_paths;
 		for character in path.chars() {
 			match hashmap.get(&character) {

@@ -41,32 +41,22 @@ fn main() {
 		println!("Enter one of the following operations:");
 		let answer = &interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\nSort\nDuplicates").to_lowercase();
 		match answer.as_str() {
-			"create" => {
+			"create" =>
 				match edlist.create(&interfacer) {
 					Ok(_res) => (),
 					Err(err) => {
 						println!("Error from edlist.create {}", err);
 						return;
 					}
-				}
-			},
-			"verify" => {
-				handle_verify_error_list(edlist.verify(None, &interfacer));
-				
-			},
+				},
+			"verify" => handle_verify_error_list(edlist.verify(None, &interfacer)),
 			"verifysub" => {
 				let prefix = interfacer.get_user_answer("Enter your path prefix");
 				handle_verify_error_list(edlist.verify(Some(prefix), &interfacer));
 			},
-			"delete" => {
-				edlist.delete(&interfacer);
-			},
-			"sort" => {
-				edlist.sort();
-			},
-			"duplicates" => {
-				edlist.find_duplicates(&interfacer);
-			},
+			"delete" => edlist.delete(&interfacer),
+			"sort" => edlist.sort(),
+			"duplicates" => edlist.find_duplicates(&interfacer),
 			_ => {
 				break_bool = false;
 				println!("Invalid value entered, try again!");

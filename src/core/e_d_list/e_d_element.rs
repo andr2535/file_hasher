@@ -246,7 +246,7 @@ impl EDElement {
 	/// Parses a string into an EDElement struct, if the string
 	/// does not describe a valid EDElement struct, it will return
 	/// a String containing an error message.
-	pub fn from_str(element_string: &String) -> Result<EDElement, String> {
+	pub fn from_str(element_string: &str) -> Result<EDElement, String> {
 		enum Phase {
 			BeforeFirstBracket,
 			ReadingPath,
