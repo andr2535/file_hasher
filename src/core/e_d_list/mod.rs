@@ -152,11 +152,12 @@ impl EDList {
 		let mut error_list = Vec::new();
 		let mut file_count = 0;
 		let list_length = element_list.len();
+		let list_length_width = list_length.to_string().chars().count();
 
 		for e_d_element in element_list {
 			file_count += 1;
 			let path = e_d_element.get_path();
-			list_interface.send_message(&format!("Verifying file {} of {} = {}", file_count, list_length, path));
+			list_interface.send_message(&format!("Verifying file {:0width$} of {} = {}", file_count, list_length, path, width=list_length_width));
 
 			match e_d_element.test_integrity() {
 				Ok(_) => (),
@@ -233,11 +234,12 @@ impl EDList {
 		}
 		if deleted_paths.len() > 0 {
 			let length = deleted_paths.len();
+			let length_width = length.to_string().chars().count();
 			list_interface.send_message(&format!("Deleted paths, amount = {}", length));
 			let mut index = 0;
 			for deleted_path in deleted_paths {
 				index += 1;
-				list_interface.send_message(&format!("{} of {}: {}", index, length, deleted_path));
+				list_interface.send_message(&format!("{:0width$} of {}: {}", index, length, deleted_path, width=length_width));
 			}
 		}
 		self.element_list = new_list;
@@ -267,8 +269,10 @@ impl EDList {
 		}
 
 		let pending_hashing_length = pending_hashing.len();
+		let pending_hashing_length_width = pending_hashing_length.to_string().chars().count();
 		for (i, string) in pending_hashing.into_iter().enumerate() {
-			list_interface.send_message(&format!("Hashing file {} of {} = {}", i+1, pending_hashing_length, string));
+			list_interface.send_message(&format!("Hashing file {:0width$} of {} = {}", i+1,
+			                            pending_hashing_length, string, width=pending_hashing_length_width));
 			let new_element = match EDElement::from_path(string) {
 				Ok(new_element) => new_element,
 				Err(err) => return Err(err)
