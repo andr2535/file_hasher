@@ -358,12 +358,13 @@ impl EDElement {
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
 
-		else {
+		else if variant_string == "link" {
 			// If variant_string is not file, it must be "link".
 			// Create Result with EDElement, that has a LinkElement.
 			let variant_fields = EDVariantFields::Link(LinkElement{link_target: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
 		}
+		else {Err(String::from("variant_string was invalid"))}
 	}
 }
 impl Clone for EDElement {
