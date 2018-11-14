@@ -111,6 +111,7 @@ impl EDElement {
 
 	/// test_integrity tests the integrity of the EDElement against
 	/// the file or symbolic link it points to.
+	/// 
 	/// If the symbolic_link or file has changed, or there has
 	/// been corruption in the EDElement struct, an Result::Err
 	/// containing a string describing the error will be returned.
@@ -210,20 +211,6 @@ impl EDElement {
 
 	pub fn get_variant(&self) -> &EDVariantFields {
 		return &self.variant_fields;
-	}
-
-	pub fn clone(&self) -> EDElement {
-		match &self.variant_fields {
-			EDVariantFields::File(file_element) => {
-				let file_variant = EDVariantFields::File(FileElement{file_hash: file_element.file_hash});
-				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, file_variant);
-			},
-			EDVariantFields::Link(link_element) => {
-				let link_variant = EDVariantFields::Link(LinkElement{link_target: String::from(link_element.link_target.as_str())});
-				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, link_variant);
-			}
-		}
-
 	}
 
 	/// Convert EDElement to a String representation, this
@@ -376,6 +363,20 @@ impl EDElement {
 			// Create Result with EDElement, that has a LinkElement.
 			let variant_fields = EDVariantFields::Link(LinkElement{link_target: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, variant_fields));
+		}
+	}
+}
+impl Clone for EDElement {
+	fn clone(&self) -> EDElement {
+		match &self.variant_fields {
+			EDVariantFields::File(file_element) => {
+				let file_variant = EDVariantFields::File(FileElement{file_hash: file_element.file_hash});
+				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, file_variant);
+			},
+			EDVariantFields::Link(link_element) => {
+				let link_variant = EDVariantFields::Link(LinkElement{link_target: String::from(link_element.link_target.as_str())});
+				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, link_variant);
+			}
 		}
 	}
 }
