@@ -5,18 +5,21 @@ use core::interfacer::UserInterface;
 mod term_interfacer;
 use term_interfacer::UserMessenger;
 
-fn handle_verify_error_list(error_list:Vec<String>) {
+fn handle_error_list(error_list:Vec<String>, prepend_message:&str, no_errors_message:&str) {
 	if error_list.len() > 0 {
-		println!("Errors found:");
+		let length = error_list.len();
+		let length_width = length.to_string().chars().count();
+		let mut counter = 0;
+		println!("{}", prepend_message);
 		for error in error_list {
-			println!("{}", error);
+			counter += 1;
+			println!("Error {:0width$} of {}: {}", counter, length, error, width=length_width);
 		}
 	}
 	else {
-		println!("No errors found!");
+		println!("{}", no_errors_message);
 	}
 }
-
 fn main() {
 	let banlist = match path_banlist::PathBanlist::open(UserMessenger::new()) {
 		Ok(result) => result,
@@ -43,16 +46,18 @@ fn main() {
 		match answer.as_str() {
 			"create" =>
 				match edlist.create(&interfacer) {
-					Ok(_res) => (),
+					Ok(err_list) => {
+						handle_error_list(err_list, "There were errors during this create operation:", "");
+					},
 					Err(err) => {
 						println!("Error from edlist.create {}", err);
 						return;
 					}
 				},
-			"verify" => handle_verify_error_list(edlist.verify(None, &interfacer)),
+			"verify" => handle_error_list(edlist.verify(None, &interfacer), "Errors found:", "No errors found!"),
 			"verifysub" => {
 				let prefix = interfacer.get_user_answer("Enter your path prefix");
-				handle_verify_error_list(edlist.verify(Some(prefix), &interfacer));
+				handle_error_list(edlist.verify(Some(prefix), &interfacer), "Errors found:", "No errors found!");
 			},
 			"delete" => edlist.delete(&interfacer),
 			"sort" => edlist.sort(),

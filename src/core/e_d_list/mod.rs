@@ -249,7 +249,13 @@ impl EDList {
 	/// added to the list yet, and puts them into the list.
 	/// It gives messages of all the elements it is hashing
 	/// to the list_interface, while it is in progress.
-	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<(), String> {
+	/// 
+	/// In case of an error when reading the file_index_list,
+	/// we return an error.
+	/// 
+	/// When this function returns Ok, it returns a list with
+	/// all the errors created when trying to read files.
+	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<Vec<String>, String> {
 		if !self.verified {panic!("EDList is not verified!");}
 		let mut already_in_list = std::collections::HashSet::new();
 		for element in &self.element_list {
@@ -268,6 +274,8 @@ impl EDList {
 			}
 		}
 
+		let mut errors = Vec::new();
+
 		let pending_hashing_length = pending_hashing.len();
 		let pending_hashing_length_width = pending_hashing_length.to_string().chars().count();
 		for (i, string) in pending_hashing.into_iter().enumerate() {
@@ -275,12 +283,15 @@ impl EDList {
 			                            pending_hashing_length, string, width=pending_hashing_length_width));
 			let new_element = match EDElement::from_path(string) {
 				Ok(new_element) => new_element,
-				Err(err) => return Err(err)
+				Err(err) => {
+					errors.push(err);
+					continue;
+				}
 			};
 			self.add_e_d_element(new_element);
 		}
 
-		Ok(())
+		Ok(errors)
 	}
 
 	/// Sort this EDList according to the paths of the EDElements.

@@ -64,22 +64,28 @@ impl EDElement {
 	/// from_path generates an EDElement from a path.
 	/// It detects automatically whether the path
 	/// refers to a link or a file.
+	/// 
+	/// Panics if the path is a symbolic link and its
+	/// link_path is not a valid utf-8 string.
 	pub fn from_path(path:String) -> Result<EDElement, String> {
 		let metadata = match fs::symlink_metadata(&path) {
 			Ok(metadata) => metadata,
-			Err(err) => panic!(format!("Error getting metadata of path \"{}\", error = {}", path, err))
+			Err(err) => return Err(format!("Error getting metadata of path \"{}\", error = {}", path, err))
 		};
 
 		if metadata.is_dir() {return Result::Err(String::from("The path is a directory!"));}
 		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 
 		if metadata.is_file() {
+			// The path is a file.
 			let file = match File::open(&path) {
 				Ok(file) => file,
 				Err(err) => return Result::Err(format!("Error opening path \"{}\", error = {}", path, err))
 			};
-			// The path is a file.
-			let hash = EDElement::hash_file(file);
+			let hash = match EDElement::hash_file(file) {
+				Ok(hash) => hash,
+				Err(err) => return Err(format!("Error reading file {}, error = {}", path, err))
+			};
 			let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
 			return Result::Ok(EDElement::from_internal(path, modified_time, file_fields));
 		}
@@ -87,7 +93,7 @@ impl EDElement {
 			// The path is a symbolic link
 			let link_path = match fs::read_link(&path).unwrap().to_str(){
 				Some(link_path) => String::from(link_path),
-				None => panic!("link_path is not a valid utf-8 string!")
+				None => panic!(format!("link_path is not a valid utf-8 string!, path to link = {}", path))
 			};
 			let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path});
 			return Result::Ok(EDElement::from_internal(path, modified_time, link_fields));
@@ -134,7 +140,10 @@ impl EDElement {
 					Ok(file) => file,
 					Err(err) => return Err(format!("Error opening file {} for testing, err = {}", &self.path, err))
 				};
-				let file_hash = EDElement::hash_file(file);
+				let file_hash = match EDElement::hash_file(file) {
+					Ok(file_hash) => file_hash,
+					Err(err) => return Err(format!("Error trying to read file {}, err = {}", &self.path, err))
+				};
 				if file_hash == file_element.file_hash {
 					if time_changed {
 						return Err(format!("File \"{}\" has a valid checksum, but the time has been changed", &self.path));
@@ -178,20 +187,23 @@ impl EDElement {
 	}
 	/// hash_file reads a file, and creates a hash for it in an
 	/// u8 vector, of length HASH_OUTPUT_LENGTH.
-	/// If there is trouble reading the file, hash_file will panic.
-	/// (Probably should be changed in the future)
-	fn hash_file(mut file:File) -> [u8; HASH_OUTPUT_LENGTH] {
+	/// If there is trouble reading the file, we will return
+	/// the error given.
+	fn hash_file(mut file:File) -> Result<[u8; HASH_OUTPUT_LENGTH], std::io::Error> {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		loop {
-			let result_size = file.read(&mut buffer).unwrap();
+			let result_size = match file.read(&mut buffer) {
+				Ok(res) => res,
+				Err(err) => return Err(err)
+			};
 			hasher.process(&buffer[0..result_size]);
 			if result_size != buffer_size {break;}
 		}
 		let mut output = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut output).unwrap();
-		output
+		Ok(output)
 	}
 
 	/// Returns a hash of the entire EDElement.
