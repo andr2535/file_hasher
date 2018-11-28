@@ -221,6 +221,10 @@ impl EDElement {
 		return &self.path;
 	}
 
+	pub fn take_path(mut self) -> String {
+		std::mem::replace(&mut self.path, String::new())
+	}
+
 	pub fn get_variant(&self) -> &EDVariantFields {
 		return &self.variant_fields;
 	}
@@ -379,17 +383,9 @@ impl EDElement {
 		else {Err(String::from("variant_string was invalid"))}
 	}
 }
-impl Clone for EDElement {
-	fn clone(&self) -> EDElement {
-		match &self.variant_fields {
-			EDVariantFields::File(file_element) => {
-				let file_variant = EDVariantFields::File(FileElement{file_hash: file_element.file_hash});
-				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, file_variant);
-			},
-			EDVariantFields::Link(link_element) => {
-				let link_variant = EDVariantFields::Link(LinkElement{link_target: String::from(link_element.link_target.as_str())});
-				return EDElement::from_internal(String::from(self.path.as_str()), self.modified_time, link_variant);
-			}
-		}
-	}
+impl AsRef<EDElement> for EDElement {
+    #[inline]
+    fn as_ref(&self) -> &EDElement {
+        self
+    }
 }

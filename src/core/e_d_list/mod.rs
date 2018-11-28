@@ -131,12 +131,12 @@ impl EDList {
 			Some(prefix) => {
 				let prefix_u8 = prefix.as_bytes();
 				let element_list = &self.element_list;
-				let mut elements_with_prefix:Vec<EDElement> = Vec::with_capacity(element_list.len());
+				let mut elements_with_prefix:Vec<&EDElement> = Vec::with_capacity(element_list.len());
 				for e_d_element in element_list {
 					let path_u8 = e_d_element.get_path().as_bytes();
 					if path_u8.len() >= prefix_u8.len() {
 						if &path_u8[0..prefix_u8.len()] == prefix_u8 {
-							elements_with_prefix.push(e_d_element.clone());
+							elements_with_prefix.push(e_d_element);
 						}
 					}
 				}
@@ -148,7 +148,7 @@ impl EDList {
 
 	/// Goes through all the elements in the given element_list.
 	/// It returns a list of all the errors in a string format.
-	fn verify_loop(&self, element_list:&Vec<EDElement>, list_interface: &impl UserInterface) -> Vec<String> {
+	fn verify_loop<T: AsRef<EDElement>>(&self, element_list: &[T], list_interface: &impl UserInterface) -> Vec<String> {
 		let mut error_list = Vec::new();
 		let mut file_count = 0;
 		let list_length = element_list.len();
@@ -156,10 +156,10 @@ impl EDList {
 
 		for e_d_element in element_list {
 			file_count += 1;
-			let path = e_d_element.get_path();
+			let path = e_d_element.as_ref().get_path();
 			list_interface.send_message(&format!("Verifying file {:0width$} of {} = {}", file_count, list_length, path, width=list_length_width));
 
-			match e_d_element.test_integrity() {
+			match e_d_element.as_ref().test_integrity() {
 				Ok(_) => (),
 				Err(error_message) => error_list.push(error_message)
 			}
@@ -177,18 +177,22 @@ impl EDList {
 	/// its metadata.
 	pub fn delete(&mut self, list_interface: &impl UserInterface) {
 		if !self.verified {panic!("EDList is not verified!");}
-		let mut new_list:Vec<EDElement> = Vec::with_capacity(self.element_list.len());
+
+		let old_list_len = self.element_list.len();
+		let old_list = std::mem::replace(&mut self.element_list, Vec::with_capacity(old_list_len));
+		let new_list = &mut self.element_list;
+
 		let mut cont_delete = false;
 		let mut deleted_paths:Vec<String> = Vec::new();
 
-		let delete_element = |deleted_paths:&mut Vec<String>, checksum:&mut[u8; HASH_OUTPUT_LENGTH], e_d_element:&EDElement| {
+		let delete_element = |deleted_paths:&mut Vec<String>, checksum:&mut[u8; HASH_OUTPUT_LENGTH], e_d_element:EDElement| {
 			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().iter()) {
 				*dest ^= hash_part;
 			}
-			deleted_paths.push(String::from(e_d_element.get_path().as_str()));
+			deleted_paths.push(e_d_element.take_path());
 		};
 
-		for e_d_element in &self.element_list {
+		for e_d_element in old_list.into_iter() {
 			let mut error = None;
 			if self.banlist.is_in_banlist(e_d_element.get_path()) {
 				error = Some(format!("Path {} is in the banlist", e_d_element.get_path()));
@@ -201,33 +205,35 @@ impl EDList {
 			}
 			match error {
 				None => {
-					new_list.push(e_d_element.clone());
+					new_list.push(e_d_element);
 				},
 				Some(err) => {
 					loop {
-						let mut break_loop = true;
 						if cont_delete {
-							delete_element(&mut deleted_paths, &mut self.checksum, &e_d_element);
+							delete_element(&mut deleted_paths, &mut self.checksum, e_d_element);
+							break;
 						}
 						else {
 							let answer = list_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
 							match answer.as_str() {
 								"YES" => {
-									delete_element(&mut deleted_paths, &mut self.checksum, &e_d_element);
+									delete_element(&mut deleted_paths, &mut self.checksum, e_d_element);
+									break;
 								},
 								"NO" => {
-									new_list.push(e_d_element.clone());
+									new_list.push(e_d_element);
+									break;
 								},
 								"CONTYES" => {
 									cont_delete = true;
-									delete_element(&mut deleted_paths, &mut self.checksum, &e_d_element);
+									delete_element(&mut deleted_paths, &mut self.checksum, e_d_element);
+									break;
 								}
 								_ => {
-									break_loop = false;
+									
 								}
 							}
 						}
-						if break_loop {break;}
 					}
 				}
 			}
@@ -242,7 +248,6 @@ impl EDList {
 				list_interface.send_message(&format!("{:0width$} of {}: {}", index, length, deleted_path, width=length_width));
 			}
 		}
-		self.element_list = new_list;
 	}
 
 	/// Finds all the files that have not been
@@ -257,20 +262,22 @@ impl EDList {
 	/// all the errors created when trying to read files.
 	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<Vec<String>, String> {
 		if !self.verified {panic!("EDList is not verified!");}
-		let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
-		for element in &self.element_list {
-			existing_paths.insert(element.get_path().clone());
-		}
-
-		let index_strings = match self.index(&String::from(".")) {
-			Ok(strings) => strings,
-			Err(err) => return Err(format!("Error indexing files, Err = {}", err))
-		};
-
 		let mut pending_hashing = Vec::new();
-		for string in index_strings {
-			if !existing_paths.contains(&string) {
-				pending_hashing.push(string);
+		{
+			let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
+			for element in &self.element_list {
+				existing_paths.insert(element.get_path());
+			}
+
+			let index_strings = match self.index(&String::from(".")) {
+				Ok(strings) => strings,
+				Err(err) => return Err(format!("Error indexing files, Err = {}", err))
+			};
+
+			for string in index_strings {
+				if !existing_paths.contains(&string) {
+					pending_hashing.push(string);
+				}
 			}
 		}
 
