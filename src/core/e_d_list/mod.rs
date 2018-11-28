@@ -257,9 +257,9 @@ impl EDList {
 	/// all the errors created when trying to read files.
 	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<Vec<String>, String> {
 		if !self.verified {panic!("EDList is not verified!");}
-		let mut already_in_list = std::collections::HashSet::new();
+		let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
 		for element in &self.element_list {
-			already_in_list.insert(element.get_path().clone());
+			existing_paths.insert(element.get_path().clone());
 		}
 
 		let index_strings = match self.index(&String::from(".")) {
@@ -269,7 +269,7 @@ impl EDList {
 
 		let mut pending_hashing = Vec::new();
 		for string in index_strings {
-			if !already_in_list.contains(&string) {
+			if !existing_paths.contains(&string) {
 				pending_hashing.push(string);
 			}
 		}

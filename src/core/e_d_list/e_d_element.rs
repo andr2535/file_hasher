@@ -131,7 +131,7 @@ impl EDElement {
 		
 		let time_changed = {
 			let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-			modified_time != *&self.modified_time
+			modified_time != self.modified_time
 		};
 		
 		match &self.variant_fields {
