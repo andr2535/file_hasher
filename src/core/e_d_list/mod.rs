@@ -415,7 +415,7 @@ impl EDList {
 	fn index(&self, path:&String) -> Result<Vec<String>, String> {
 		let entries = match std::fs::read_dir(&path) {
 			Ok(dirs) => dirs,
-			Err(err) => return Err(format!("{}", err))
+			Err(err) => return Err(format!("Error getting subdirs from dir {}, error = {}", path, err))
 		};
 		let mut index_list:Vec<String> = Vec::new();
 		
