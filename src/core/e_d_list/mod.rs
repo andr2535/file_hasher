@@ -263,21 +263,19 @@ impl EDList {
 	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<Vec<String>, String> {
 		if !self.verified {panic!("EDList is not verified!");}
 		let mut pending_hashing = Vec::new();
-		{
-			let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
-			for element in &self.element_list {
-				existing_paths.insert(element.get_path());
-			}
+		let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
+		for element in &self.element_list {
+			existing_paths.insert(element.get_path());
+		}
 
-			let index_strings = match self.index(&String::from(".")) {
-				Ok(strings) => strings,
-				Err(err) => return Err(format!("Error indexing files, Err = {}", err))
-			};
+		let index_strings = match self.index(&String::from(".")) {
+			Ok(strings) => strings,
+			Err(err) => return Err(format!("Error indexing files, Err = {}", err))
+		};
 
-			for string in index_strings {
-				if !existing_paths.contains(&string) {
-					pending_hashing.push(string);
-				}
+		for string in index_strings {
+			if !existing_paths.contains(&string) {
+				pending_hashing.push(string);
 			}
 		}
 
