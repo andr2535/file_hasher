@@ -221,6 +221,8 @@ impl EDElement {
 		return &self.path;
 	}
 
+	/// Returns an owned string of the path of this EDElement
+	/// Destroys the EDElement in the process.
 	pub fn take_path(mut self) -> String {
 		std::mem::replace(&mut self.path, String::new())
 	}
