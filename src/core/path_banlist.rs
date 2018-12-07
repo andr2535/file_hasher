@@ -2,7 +2,7 @@ extern crate blake2;
 
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
-use interfacer::UserInterface;
+use crate::interfacer::UserInterface;
 use super::constants;
 
 enum LineType {

@@ -1,4 +1,4 @@
-use core::interfacer;
+use crate::core::interfacer;
 /// UserMessenger is named Messenger, because it
 /// functions as an intermediary between the user and
 /// the file_hasher modules.

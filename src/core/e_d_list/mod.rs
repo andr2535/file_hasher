@@ -5,12 +5,12 @@ pub mod e_d_element;
 
 use self::e_d_element::EDElement;
 use super::path_banlist::PathBanlist;
-use core::constants::{HASH_OUTPUT_LENGTH,CHECKSUM_PREFIX};
+use crate::core::constants::{HASH_OUTPUT_LENGTH,CHECKSUM_PREFIX};
 
 use self::chrono::prelude::{DateTime, Local};
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
-use interfacer::UserInterface;
+use crate::interfacer::UserInterface;
 
 enum LineType {
 	Checksum(String),

@@ -1,8 +1,8 @@
 extern crate blake2;
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
-use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
+use blake2::{Blake2b, digest::{Input, VariableOutput}};
 
-use core::constants::HASH_OUTPUT_LENGTH;
+use crate::core::constants::HASH_OUTPUT_LENGTH;
 
 #[derive(Debug)]
 /// FileElement is a struct that contains the fields that
@@ -136,7 +136,7 @@ impl EDElement {
 		
 		match &self.variant_fields {
 			EDVariantFields::File(file_element) => {
-				let mut file = match File::open(&self.path) {
+				let file = match File::open(&self.path) {
 					Ok(file) => file,
 					Err(err) => return Err(format!("Error opening file {} for testing, err = {}", &self.path, err))
 				};

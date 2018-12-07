@@ -1,9 +1,9 @@
 mod core;
-use core::*;
-use core::interfacer::UserInterface;
+use crate::core::*;
+use crate::core::interfacer::UserInterface;
 
 mod term_interfacer;
-use term_interfacer::UserMessenger;
+use crate::term_interfacer::UserMessenger;
 
 fn handle_error_list(error_list:Vec<String>, prepend_message:&str, no_errors_message:Option<&str>) {
 	if error_list.len() > 0 {
