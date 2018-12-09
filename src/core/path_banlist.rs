@@ -37,8 +37,8 @@ impl PathBanlist {
 			Err(err) => {
 				loop {
 					let create_new = banlist_interfacer.get_user_answer(
-						&format!("banlist file could not be opened, error message = {}\
-						\nDo you wish to create a new banlist? YES/NO", err));
+					    &format!("banlist file could not be opened, error message = {}\
+					    \nDo you wish to create a new banlist? YES/NO", err));
 					if create_new == "YES" {
 						match PathBanlist::new(banlist_interfacer) {
 							Ok(banlist) => return Ok(banlist),

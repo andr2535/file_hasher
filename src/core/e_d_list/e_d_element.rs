@@ -65,6 +65,10 @@ impl EDElement {
 	/// It detects automatically whether the path
 	/// refers to a link or a file.
 	/// 
+	/// Returns an error if the path refers to a directory.
+	/// Or if in some other way processing of the file does
+	/// not complete correctly.
+	/// 
 	/// Panics if the path is a symbolic link and its
 	/// link_path is not a valid utf-8 string.
 	pub fn from_path(path:String) -> Result<EDElement, String> {
@@ -386,8 +390,8 @@ impl EDElement {
 	}
 }
 impl AsRef<EDElement> for EDElement {
-    #[inline]
-    fn as_ref(&self) -> &EDElement {
-        self
-    }
+	#[inline]
+	fn as_ref(&self) -> &EDElement {
+		self
+	}
 }

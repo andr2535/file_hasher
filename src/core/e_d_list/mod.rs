@@ -21,18 +21,18 @@ enum LineType {
 /// EDList is a list of all the files in a subdirectory
 /// to the current directory, excepting the files that
 /// lies under the paths that exists in the banlist.
-/// 
+///
 /// The checksum is calculated by xoring the element_hash
 /// of the EDElement files together, it is used together
 /// with the EDElements to create a checksum that is saved
 /// to the hashlist file.
-/// 
+///
 /// The checksum will always be checked against the
 /// saved checksum in the file, when loading the list from
 /// file. Also the saved checksum is used in the memory,
 /// such that it is very hard for a memory error to cause
 /// data corruption in the file after a reload.
-/// 
+///
 /// The verified boolean is used to be sure that
 /// the checksum test went well(in case of the program counter
 /// skipping or some case similar)
@@ -229,9 +229,7 @@ impl EDList {
 									delete_element(&mut deleted_paths, &mut self.checksum, e_d_element);
 									break;
 								}
-								_ => {
-									
-								}
+								_ => ()
 							}
 						}
 					}
