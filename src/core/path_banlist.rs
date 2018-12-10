@@ -191,7 +191,7 @@ impl PathBanlist {
 			match unsafe {(*hashmap).get_mut(&character) } {
 				Some(char_map) => {
 					match char_map {
-						CharMapper::More(ref mut next) => {
+						CharMapper::More(next) => {
 							last_hashmap = Some(hashmap);
 							hashmap = next as *mut HashMap<char, CharMapper>;
 						},
@@ -209,7 +209,7 @@ impl PathBanlist {
 				match unsafe {(*hashmap).get_mut(&character)} {
 					Some(char_map) => {
 						match char_map {
-							CharMapper::More(ref mut next) => {
+							CharMapper::More(next) => {
 								last_hashmap = Some(hashmap);
 								hashmap = next as *mut HashMap<char, CharMapper>;
 							},
@@ -225,9 +225,7 @@ impl PathBanlist {
 		match last_hashmap {
 			Some(hashmap) => {
 				match last_char {
-					Some(character) => {
-						unsafe {(*hashmap).insert(character, CharMapper::Terminator);}
-					}
+					Some(character) => unsafe {(*hashmap).insert(character, CharMapper::Terminator);}
 					None => ()
 				}
 			},

@@ -354,8 +354,8 @@ impl EDList {
 	pub fn find_duplicates(&self, list_interface: &impl UserInterface) {
 		if !self.verified {panic!("EDList is not verified!");}
 		use std::collections::hash_map::Entry;
-		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::new();
-		let mut file_dups:HashMap<[u8; HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::new();
+		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
+		let mut file_dups:HashMap<[u8; HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		for element in &self.element_list {
 			match element.get_variant() {
 				e_d_element::EDVariantFields::File(file) => {
@@ -381,9 +381,11 @@ impl EDList {
 			}
 		}
 
+		let mut collision_blocks = 0;
 		list_interface.send_message("Links with same target path:");
 		for (key, vector) in link_dups {
 			if vector.len() <= 1 {continue;}
+			collision_blocks += 1;
 			list_interface.send_message(&format!("    links with target path \"{}\":", key));
 			for element in vector {
 				list_interface.send_message(&format!("        {}", element.get_path()));
@@ -392,6 +394,7 @@ impl EDList {
 		list_interface.send_message("Files with the same checksum:");
 		for (hash, vector) in file_dups {
 			if vector.len() <= 1 {continue;}
+			collision_blocks += 1;
 			let mut hash_str = String::with_capacity(HASH_OUTPUT_LENGTH*2);
 			for byte in hash.iter() {
 				hash_str += &format!("{:02X}", byte);
@@ -401,6 +404,7 @@ impl EDList {
 				list_interface.send_message(&format!("        {}", element.get_path()));
 			}
 		}
+		list_interface.send_message(&format!("{} unique collisions found",collision_blocks));
 	}
 
 	/// Returns a complete list of all files
