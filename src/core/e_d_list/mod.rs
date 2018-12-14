@@ -4,6 +4,7 @@ extern crate blake2;
 pub mod e_d_element;
 
 use self::e_d_element::EDElement;
+use super::shared;
 use super::path_banlist::PathBanlist;
 use crate::core::constants::{HASH_OUTPUT_LENGTH,CHECKSUM_PREFIX};
 
@@ -101,7 +102,7 @@ impl EDList {
 		
 		match checksum {
 			Some(checksum) => {
-				let generated_checksum = PathBanlist::blake2_to_string(hasher);
+				let generated_checksum = shared::blake2_to_string(hasher);
 				if checksum != generated_checksum {
 					return Err(String::from("checksum in file_hashes is not valid!"));
 				}
@@ -520,7 +521,7 @@ impl EDList {
 		}
 		hasher.process(&self.checksum);
 		// We use the same conversion method as in PathBanlist, so we reuse it.
-		let checksum_string = format!("{}{}", CHECKSUM_PREFIX, PathBanlist::blake2_to_string(hasher));
+		let checksum_string = format!("{}{}", CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
 		match file.write(checksum_string.as_bytes()) {
 			Ok(_len) => (),
 			Err(err) => return Err(format!("Error writing checksum to the {}, err = {}", file_name, err))

@@ -4,6 +4,7 @@ use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collectio
 use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
 use crate::interfacer::UserInterface;
 use super::constants;
+use super::shared;
 
 enum LineType {
 	Comment,
@@ -82,7 +83,7 @@ impl PathBanlist {
 		}
 
 		// Verify checksum validiy against the generated hash.
-		let hash_string = PathBanlist::blake2_to_string(hasher);
+		let hash_string = shared::blake2_to_string(hasher);
 		match checksum {
 			Some(checksum) => {
 				if hash_string != checksum {
@@ -128,26 +129,12 @@ impl PathBanlist {
 			hasher.process(string.as_bytes());
 		}
 
-		let write_result = file.write(format!("{}{}", constants::CHECKSUM_PREFIX, PathBanlist::blake2_to_string(hasher)).as_bytes());
+		let write_result = file.write(format!("{}{}", constants::CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes());
 
 		match write_result {
 			Ok(_len) => return PathBanlist::open(banlist_interfacer),
 			Err(err) => return Err(format!("Error writing checksum to banlist, Error = {}", err))
 		};
-	}
-
-	/// Converts a Blake2b object into a string.
-	/// The hash is output in capital hexadecimal letters.
-	pub fn blake2_to_string(hasher:Blake2b) -> String {
-		let mut hash = [0u8; constants::HASH_OUTPUT_LENGTH];
-		hasher.variable_result(&mut hash).unwrap();
-
-		let mut hash_string = String::with_capacity(constants::HASH_OUTPUT_LENGTH*2);
-		for byte in hash.iter() {
-			hash_string.push_str(&format!("{:02X}", byte));
-		}
-
-		return hash_string;
 	}
 
 	/// identify_line determines if a line is a comment, a checksum or a banned path.
