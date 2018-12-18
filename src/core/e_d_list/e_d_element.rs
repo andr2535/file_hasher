@@ -221,7 +221,7 @@ impl EDElement {
 
 	/// Returns an immutable reference to the path
 	/// of this element.
-	pub fn get_path(&self) -> &String {
+	pub fn get_path(&self) -> &str {
 		return &self.path;
 	}
 

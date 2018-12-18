@@ -186,7 +186,8 @@ impl EDList {
 		let mut cont_delete = false;
 		let mut deleted_paths:Vec<String> = Vec::new();
 
-		let delete_element = |deleted_paths:&mut Vec<String>, checksum:&mut[u8; HASH_OUTPUT_LENGTH], e_d_element:EDElement| {
+		let checksum = &mut self.checksum;
+		let mut delete_element = |e_d_element:EDElement| {
 			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().iter()) {
 				*dest ^= hash_part;
 			}
@@ -211,14 +212,14 @@ impl EDList {
 				Some(err) => {
 					loop {
 						if cont_delete {
-							delete_element(&mut deleted_paths, &mut self.checksum, e_d_element);
+							delete_element(e_d_element);
 							break;
 						}
 						else {
 							let answer = list_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
 							match answer.as_str() {
 								"YES" => {
-									delete_element(&mut deleted_paths, &mut self.checksum, e_d_element);
+									delete_element(e_d_element);
 									break;
 								},
 								"NO" => {
@@ -227,7 +228,7 @@ impl EDList {
 								},
 								"CONTYES" => {
 									cont_delete = true;
-									delete_element(&mut deleted_paths, &mut self.checksum, e_d_element);
+									delete_element(e_d_element);
 									break;
 								}
 								_ => ()
@@ -273,7 +274,7 @@ impl EDList {
 		};
 
 		for string in index_strings {
-			if !existing_paths.contains(&string) {
+			if !existing_paths.contains(string.as_str()) {
 				pending_hashing.push(string);
 			}
 		}
