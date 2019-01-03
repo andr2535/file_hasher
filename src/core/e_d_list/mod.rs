@@ -1,6 +1,3 @@
-extern crate chrono;
-extern crate blake2;
-
 pub mod e_d_element;
 
 use self::e_d_element::EDElement;
@@ -8,8 +5,8 @@ use super::shared;
 use super::path_banlist::PathBanlist;
 use crate::core::constants::{HASH_OUTPUT_LENGTH,CHECKSUM_PREFIX};
 
-use self::chrono::prelude::{DateTime, Local};
-use self::blake2::{Blake2b, digest::{Input, VariableOutput}};
+use chrono::prelude::{DateTime, Local};
+use blake2::{Blake2b, digest::{Input, VariableOutput}};
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use crate::interfacer::UserInterface;
 

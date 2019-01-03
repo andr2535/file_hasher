@@ -1,4 +1,3 @@
-extern crate blake2;
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use blake2::{Blake2b, digest::{Input, VariableOutput}};
 
