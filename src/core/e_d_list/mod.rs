@@ -43,9 +43,13 @@ pub struct EDList {
 impl EDList {
 	/// Attempts to open the ./file_hasher_files/file_hashes file
 	/// and interprets it as an EDList.
+	/// 
 	/// If it is unable to open the file, it may ask the user
 	/// whether it should create a new file, using an object implementing
 	/// UserInterface.
+	/// 
+	/// Also writes a backup of the file_hashes file,
+	/// to the file_hash_backups folder, when file_hashes has been read.
 	pub fn open(list_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, String> {
 		let mut e_d_list = EDList::new(banlist);
 		let file = match File::open("./file_hasher_files/file_hashes") {
@@ -74,7 +78,7 @@ impl EDList {
 				Err(err) => return Result::Err(String::from(format!("Error reading line, error message = {}", err)))
 			};
 			
-			match EDList::identify_line(&line) {
+			match EDList::identify_line(line.as_ref()) {
 				LineType::Checksum(value) => {
 					match checksum {
 						None => {
@@ -132,10 +136,8 @@ impl EDList {
 				let mut elements_with_prefix:Vec<&EDElement> = Vec::with_capacity(element_list.len());
 				for e_d_element in element_list {
 					let path_u8 = e_d_element.get_path().as_bytes();
-					if path_u8.len() >= prefix_u8.len() {
-						if &path_u8[0..prefix_u8.len()] == prefix_u8 {
-							elements_with_prefix.push(e_d_element);
-						}
+					if path_u8.len() >= prefix_u8.len() && &path_u8[0..prefix_u8.len()] == prefix_u8 {
+						elements_with_prefix.push(e_d_element);
 					}
 				}
 				self.verify_loop(&elements_with_prefix, list_interface)
@@ -450,7 +452,11 @@ impl EDList {
 		return Ok(index_list);
 	}
 
-	fn identify_line(line: &String) -> LineType {
+	/// Identifies a line as either a checksum, or an EDElement
+	/// in String form.
+	///
+	/// Used to determine how the string should be processed.
+	fn identify_line(line: &str) -> LineType {
 		// Figure out whether line is a checksum.
 		let checksum_prefix_u8 = CHECKSUM_PREFIX.as_bytes();
 		let line_checksum_u8 = line.as_bytes();
