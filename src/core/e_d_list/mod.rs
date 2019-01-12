@@ -69,13 +69,13 @@ impl EDList {
 			}
 		};
 		let buf_reader = BufReader::new(file);
-		let mut checksum: Option<String> = Option::None;
+		let mut checksum: Option<String> = None;
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		for line in buf_reader.lines() {
 			let line = match line {
 				Ok(line) => line,
-				Err(err) => return Result::Err(String::from(format!("Error reading line, error message = {}", err)))
+				Err(err) => return Err(format!("Error reading line, error message = {}", err))
 			};
 			
 			match EDList::identify_line(line.as_ref()) {
@@ -85,7 +85,7 @@ impl EDList {
 							checksum = Some(value);
 						},
 						Some(_val) => {
-							return Err(String::from("More than one checksum in file_hashes!"));
+							return Err("More than one checksum in file_hashes!".to_string());
 						}
 					}
 				},
@@ -105,11 +105,11 @@ impl EDList {
 			Some(checksum) => {
 				let generated_checksum = shared::blake2_to_string(hasher);
 				if checksum != generated_checksum {
-					return Err(String::from("checksum in file_hashes is not valid!"));
+					return Err("checksum in file_hashes is not valid!".to_string());
 				}
 				e_d_list.verified = checksum == generated_checksum;
 			}
-			None => return Err(String::from("file_hashes missing checksum!"))
+			None => return Err("file_hashes missing checksum!".to_string())
 		}
 		match e_d_list.write_backup() {
 			Ok(_ok) => (),
@@ -127,7 +127,7 @@ impl EDList {
 	/// Returns a vector with strings describing all the errors.
 	/// Also sends a message to the UserInterface impl, for every
 	/// element that is being tested.
-	pub fn verify(&self, prefix:Option<String>, list_interface: &impl UserInterface) -> Vec<String> {
+	pub fn verify(&self, prefix:Option<&str>, list_interface: &impl UserInterface) -> Vec<String> {
 		if !self.verified {panic!("EDList is not verified!");}
 		match prefix {
 			Some(prefix) => {
@@ -424,9 +424,9 @@ impl EDList {
 			let (entry, file_type) = match entry {
 				Ok(entry) => match entry.file_type() {
 					Ok(file_type) => (entry, file_type),
-					Err(_err) => return Err(String::from("Error getting file type of index"))
+					Err(_err) => return Err("Error getting file type of index".to_string())
 				},
-				Err(_err) => return Err(String::from("Error iterating indexes"))
+				Err(_err) => return Err("Error iterating indexes".to_string())
 			};
 
 			let file_path = match entry.file_name().into_string() {
