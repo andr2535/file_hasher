@@ -8,7 +8,7 @@ pub struct UserMessenger {
 impl UserMessenger {
 	pub fn new() -> UserMessenger {
 		let stdin = std::io::stdin();
-		UserMessenger{stdin:stdin}
+		UserMessenger{stdin}
 	}
 }
 impl interfacer::UserInterface for UserMessenger {

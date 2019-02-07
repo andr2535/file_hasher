@@ -119,7 +119,7 @@ impl EDList {
 	}
 	/// Creates a new empty EDList.
 	fn new(banlist: PathBanlist) -> EDList {
-		EDList{element_list: Vec::new(), banlist: banlist, checksum: [0u8; HASH_OUTPUT_LENGTH], verified:false}
+		EDList{element_list: Vec::new(), banlist, checksum: [0u8; HASH_OUTPUT_LENGTH], verified:false}
 	}
 
 	/// Tests every element in the lists integrity against
@@ -150,14 +150,12 @@ impl EDList {
 	/// It returns a list of all the errors in a string format.
 	fn verify_loop<T: AsRef<EDElement>>(&self, element_list: &[T], list_interface: &impl UserInterface) -> Vec<String> {
 		let mut error_list = Vec::new();
-		let mut file_count = 0;
 		let list_length = element_list.len();
 		let list_length_width = list_length.to_string().chars().count();
 
-		for e_d_element in element_list {
-			file_count += 1;
+		for (file_count, e_d_element) in element_list.iter().enumerate() {
 			let path = e_d_element.as_ref().get_path();
-			list_interface.send_message(&format!("Verifying file {:0width$} of {} = {}", file_count, list_length, path, width=list_length_width));
+			list_interface.send_message(&format!("Verifying file {:0width$} of {} = {}", file_count + 1, list_length, path, width=list_length_width));
 
 			match e_d_element.as_ref().test_integrity() {
 				Ok(_) => (),
@@ -194,10 +192,12 @@ impl EDList {
 		};
 
 		for e_d_element in old_list.into_iter() {
-			let mut error = None;
+			let mut error = 
 			if self.banlist.is_in_banlist(e_d_element.get_path()) {
-				error = Some(format!("Path {} is in the banlist", e_d_element.get_path()));
+				Some(format!("Path {} is in the banlist", e_d_element.get_path()))
 			}
+			else {None};
+
 			if error.is_none() {
 				match e_d_element.test_metadata() {
 					Ok(()) => (),
@@ -237,14 +237,12 @@ impl EDList {
 				}
 			}
 		}
-		if deleted_paths.len() > 0 {
+		if !deleted_paths.is_empty() {
 			let length = deleted_paths.len();
 			let length_width = length.to_string().chars().count();
 			list_interface.send_message(&format!("Deleted paths, amount = {}", length));
-			let mut index = 0;
-			for deleted_path in deleted_paths {
-				index += 1;
-				list_interface.send_message(&format!("{:0width$} of {}: {}", index, length, deleted_path, width=length_width));
+			for (index, deleted_path) in deleted_paths.iter().enumerate() {
+				list_interface.send_message(&format!("{:0width$} of {}: {}", index + 1, length, deleted_path, width=length_width));
 			}
 		}
 	}
@@ -310,10 +308,7 @@ impl EDList {
 			
 			let mut a_next = split_a.next();
 			let mut b_next = split_b.next();
-			loop {
-				let a = match a_next {Some(a) => a, None => break};
-				let b = match b_next {Some(b) => b, None => break};
-
+			while let (Some(a), Some(b)) = (a_next, b_next) {
 				if cmp_state != Ordering::Equal {
 					// If we get here then both are subdirectories, with different roots.
 					return cmp_state;
@@ -327,21 +322,15 @@ impl EDList {
 				b_next = split_b.next();
 			}
 			
-			match a_next {
-				Some(_block) => {
-					// If we get here, then a has a next, but b doesn't
-					return Ordering::Greater;
-				},
-				None => ()
+			if let Some(_block) = a_next {
+				// If we get here, then a has a next, but b doesn't
+				Ordering::Greater
 			}
-			match b_next {
-				Some(_block) => {
-					// If we get here, then b has a next, but a doesn't
-					return Ordering::Less;
-				},
-				None => ()
+			else if let Some(_block) = b_next {
+				// If we get here, then b has a next, but a doesn't
+				Ordering::Less
 			}
-			cmp_state
+			else {cmp_state}
 		});
 	}
 
@@ -413,8 +402,8 @@ impl EDList {
 	/// Does not follow symbolic links, but symbolic links are indexed
 	/// as a normal file.
 	/// Does not index paths that are in the banlist.
-	fn index(&self, path:&String) -> Result<Vec<String>, String> {
-		let entries = match std::fs::read_dir(&path) {
+	fn index(&self, path:&str) -> Result<Vec<String>, String> {
+		let entries = match std::fs::read_dir(path) {
 			Ok(dirs) => dirs,
 			Err(err) => return Err(format!("Error getting subdirs from dir {}, error = {}", path, err))
 		};
@@ -431,7 +420,7 @@ impl EDList {
 
 			let file_path = match entry.file_name().into_string() {
 				Ok(file_name) => format!("{}/{}", path, file_name),
-				Err(_err) => return Err(format!("Failed to convert OsString to String in index"))
+				Err(_err) => return Err("Failed to convert OsString to String in index".to_string())
 			};
 			// If file_path is in banlist, we should not index it.
 			if self.banlist.is_in_banlist(&file_path) {continue;}
@@ -449,7 +438,7 @@ impl EDList {
 				index_list.push(file_path);
 			}
 		}
-		return Ok(index_list);
+		Ok(index_list)
 	}
 
 	/// Identifies a line as either a checksum, or an EDElement
@@ -517,7 +506,7 @@ impl EDList {
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		for element in &self.element_list {
-			match file.write(format!("{}\n", element.to_string()).as_bytes()) {
+			match file.write_all(format!("{}\n", element.to_string()).as_bytes()) {
 				Ok(_len) => (),
 				Err(err) => return Err(format!("Error writing to the {} file. err = {}", file_name, err))
 			}

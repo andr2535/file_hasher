@@ -14,5 +14,5 @@ pub fn blake2_to_string(hasher:Blake2b) -> String {
 		hash_string.push_str(&format!("{:02X}", byte));
 	}
 
-	return hash_string;
+	hash_string
 }

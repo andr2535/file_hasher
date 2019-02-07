@@ -6,18 +6,16 @@ mod term_interfacer;
 use crate::term_interfacer::UserMessenger;
 
 fn handle_error_list(error_list:Vec<String>, prepend_message:&str, no_errors_message:Option<&str>) {
-	if error_list.len() > 0 {
+	if !error_list.is_empty() {
 		let length = error_list.len();
 		let length_width = length.to_string().chars().count();
-		let mut counter = 0;
 		println!("{}", prepend_message);
-		for error in error_list {
-			counter += 1;
-			println!("Error {:0width$} of {}: {}", counter, length, error, width=length_width);
+		for (counter, error) in error_list.iter().enumerate() {
+			println!("Error {:0width$} of {}: {}", counter + 1, length, error, width=length_width);
 		}
 	}
-	else {
-		if let Some(no_errors_message) = no_errors_message {println!("{}", no_errors_message);}
+	else if let Some(no_errors_message) = no_errors_message {
+		println!("{}", no_errors_message);
 	}
 }
 fn main() {

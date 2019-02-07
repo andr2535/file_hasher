@@ -57,7 +57,7 @@ impl PathBanlist {
 		for line in buf_reader.lines() {
 			let line = match line {
 				Ok(line) => line,
-				Err(err) => return Result::Err(String::from(format!("Error reading line, error message = {}", err)))
+				Err(err) => return Result::Err(format!("Error reading line, error message = {}", err))
 			};
 			
 			match PathBanlist::identify_line(&line) {
@@ -97,7 +97,7 @@ impl PathBanlist {
 			}
 		}
 
-		return Result::Ok(PathBanlist{banned_paths});
+		Ok(PathBanlist{banned_paths})
 	}
 	/// Attempts to create a new banlist file, and then opens it using
 	/// the open function.
@@ -130,9 +130,9 @@ impl PathBanlist {
 		let write_result = file.write(format!("{}{}", constants::CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes());
 
 		match write_result {
-			Ok(_len) => return PathBanlist::open(banlist_interfacer),
-			Err(err) => return Err(format!("Error writing checksum to banlist, Error = {}", err))
-		};
+			Ok(_len) => PathBanlist::open(banlist_interfacer),
+			Err(err) => Err(format!("Error writing checksum to banlist, Error = {}", err))
+		}
 	}
 
 	/// identify_line determines if a line is a comment, a checksum or a banned path.
@@ -207,14 +207,10 @@ impl PathBanlist {
 			}
 		}
 		// Add terminator instead of the last hashmap.
-		match last_hashmap {
-			Some(hashmap) => {
-				match last_char {
-					Some(character) => unsafe {(*hashmap).insert(character, CharMapper::Terminator);}
-					None => ()
-				}
-			},
-			None => ()
+		if let Some(hashmap) = last_hashmap {
+			if let Some(character) = last_char {
+				unsafe {(*hashmap).insert(character, CharMapper::Terminator);}
+			}
 		}
 	}
 	/// Used to test whether the given path has any
@@ -236,6 +232,6 @@ impl PathBanlist {
 				}
 			}
 		}
-		return false;
+		false
 	}
 }

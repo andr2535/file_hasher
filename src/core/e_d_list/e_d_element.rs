@@ -58,7 +58,7 @@ impl EDElement {
 		let mut element_hash = [0u8; HASH_OUTPUT_LENGTH];
 		hasher.variable_result(&mut element_hash).unwrap();
 
-		EDElement{path: path, modified_time: modified_time, variant_fields:variant_fields, element_hash: element_hash}
+		EDElement{path, modified_time, variant_fields, element_hash}
 	}
 	/// from_path generates an EDElement from a path.
 	/// It detects automatically whether the path
@@ -113,9 +113,9 @@ impl EDElement {
 		if metadata.is_dir() {return Err(format!("Path \"{}\" is a directory", &self.path))}
 		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 		if modified_time != self.modified_time {
-			return Err(format!("File with path \"{}\", has a different modified time than expected", &self.path));
+			Err(format!("File with path \"{}\", has a different modified time than expected", &self.path))
 		}
-		Ok(())
+		else {Ok(())}
 	}
 
 	/// test_integrity tests the integrity of the EDElement against
@@ -149,19 +149,17 @@ impl EDElement {
 				};
 				if file_hash == file_element.file_hash {
 					if time_changed {
-						return Err(format!("File \"{}\" has a valid checksum, but the time has been changed", &self.path));
+						Err(format!("File \"{}\" has a valid checksum, but the time has been changed", &self.path))
 					}
 					else {
-						return Ok(());
+						Ok(())
 					}
 				}
+				else if time_changed {
+					Err(format!("File \"{}\" has an invalid checksum, and it's time has been changed", &self.path))
+				}
 				else {
-					if time_changed {
-						return Err(format!("File \"{}\" has an invalid checksum, and it's time has been changed", &self.path));
-					}
-					else {
-						return Err(format!("File \"{}\" has an invalid checksum", &self.path));
-					}
+					Err(format!("File \"{}\" has an invalid checksum", &self.path))
 				}
 			},
 			EDVariantFields::Link(link_element) => {
@@ -171,19 +169,17 @@ impl EDElement {
 				};
 				if link_path == link_element.link_target {
 					if time_changed {
-						return Err(format!("Time changed on link \"{}\", but link has valid target path", &self.path));
+						Err(format!("Time changed on link \"{}\", but link has valid target path", &self.path))
 					}
 					else {
-						return Ok(());
+						Ok(())
 					}
 				}
+				else if time_changed {
+					Err(format!("Link \"{}\", has an invalid target path, and it's modified time has changed", &self.path))
+				}
 				else {
-					if time_changed {
-						return Err(format!("Link \"{}\", has an invalid target path, and it's modified time has changed", &self.path));
-					}
-					else {
-						return Err(format!("Link \"{}\", has an invalid target path", &self.path));
-					}
+					Err(format!("Link \"{}\", has an invalid target path", &self.path))
 				}
 			}
 		}
@@ -215,13 +211,13 @@ impl EDElement {
 	/// So if anything changes inside the EDElement,
 	/// this hash would be invalid.
 	pub fn get_hash(&self) -> &[u8; HASH_OUTPUT_LENGTH] {
-		return &self.element_hash;
+		&self.element_hash
 	}
 
 	/// Returns an immutable reference to the path
 	/// of this element.
 	pub fn get_path(&self) -> &str {
-		return &self.path;
+		&self.path
 	}
 
 	/// Returns an owned string of the path of this EDElement
@@ -231,7 +227,7 @@ impl EDElement {
 	}
 
 	pub fn get_variant(&self) -> &EDVariantFields {
-		return &self.variant_fields;
+		&self.variant_fields
 	}
 
 	/// Convert EDElement to a String representation, this
@@ -241,7 +237,7 @@ impl EDElement {
 		let variant_fields = match &self.variant_fields {
 			EDVariantFields::File(file) => {
 				let mut file_hash = String::with_capacity(HASH_OUTPUT_LENGTH*2);
-				for element in file.file_hash.into_iter(){
+				for element in file.file_hash.iter(){
 					file_hash += &format!("{:02X}", element);
 				}
 				format!("file({})", file_hash)
