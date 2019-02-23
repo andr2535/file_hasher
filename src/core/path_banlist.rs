@@ -64,7 +64,7 @@ impl PathBanlist {
 				LineType::BannedPath => {
 					hasher.process(line.as_bytes());
 
-					PathBanlist::insert_to_banlist(&mut banned_paths, &line);
+					PathBanlist::insert_to_banlist(line.chars(), &mut banned_paths);
 				},
 				LineType::Checksum(value) => {
 					match checksum {
@@ -161,57 +161,31 @@ impl PathBanlist {
 	
 	/// Used internally by the path_banlist open constructor,
 	/// to insert the needed paths into the banlist.
-	fn insert_to_banlist(banlist:&mut HashMap<char, CharMapper>, line:&str) {
-		// Unsafe variables.
-		let mut last_hashmap:Option<*mut HashMap<char, CharMapper>> = None;
-		let mut hashmap = banlist as *mut HashMap<char, CharMapper>;
-
-		let mut last_char:Option<char> = Option::None;
-		
-		for character in line.chars() {
-			last_char = Some(character);
-
-			// Used to know if there was not anything mapped to the character.
-			let mut none_in_hashmap = false;
-			match unsafe {(*hashmap).get_mut(&character) } {
-				Some(char_map) => {
-					match char_map {
-						CharMapper::More(next) => {
-							last_hashmap = Some(hashmap);
-							hashmap = next as *mut HashMap<char, CharMapper>;
-						},
-						// We return, since we hit a terminator before the line reaches its end.
-						CharMapper::Terminator => return
-					}
+	fn insert_to_banlist(mut char_iter: std::str::Chars<'_>, hashmap: &mut HashMap<char, CharMapper>) -> Option<CharMapper> {
+		let character = match char_iter.next() {
+			Some(character) => character,
+			None => return Some(CharMapper::Terminator)
+		};
+		let new_char_mapper = match hashmap.get_mut(&character) {
+			Some(char_map) => {
+				match char_map {
+					CharMapper::Terminator => None,
+					CharMapper::More(inner_hashmap) => PathBanlist::insert_to_banlist(char_iter, inner_hashmap)
 				}
-				None => {
-					none_in_hashmap = true;
-				}
+			},
+			None => {
+				let mut new_hashmap = HashMap::new();
+				match PathBanlist::insert_to_banlist(char_iter, &mut new_hashmap) {
+					Some(char_mapper) => hashmap.insert(character, char_mapper),
+					None => hashmap.insert(character, CharMapper::More(new_hashmap))
+				};
+				None
 			}
-			if none_in_hashmap {
-				unsafe {(*hashmap).insert(character, CharMapper::More(HashMap::new()));}
-
-				match unsafe {(*hashmap).get_mut(&character)} {
-					Some(char_map) => {
-						match char_map {
-							CharMapper::More(next) => {
-								last_hashmap = Some(hashmap);
-								hashmap = next as *mut HashMap<char, CharMapper>;
-							},
-							CharMapper::Terminator => panic!("Terminator set in path_banlist, where there can't be any!")
-						}
-					}
-					// There will always be a some, since we just inserted the value.
-					None => panic!("Value that should have been inserted doesn't exist in path_banlist!")
-				}
-			}
+		};
+		if let Some(new_char_mapper) = new_char_mapper {
+			hashmap.insert(character, new_char_mapper);
 		}
-		// Add terminator instead of the last hashmap.
-		if let Some(hashmap) = last_hashmap {
-			if let Some(character) = last_char {
-				unsafe {(*hashmap).insert(character, CharMapper::Terminator);}
-			}
-		}
+		None
 	}
 	/// Used to test whether the given path has any
 	/// of its prefixes defined in the banlist.
