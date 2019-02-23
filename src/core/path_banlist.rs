@@ -44,7 +44,7 @@ impl PathBanlist {
 							Err(err) => return Err(err)
 						}
 					}
-					else if create_new == "NO" {return Result::Err(String::from("banlist file could not be opened"));}
+					else if create_new == "NO" {return Err("banlist file could not be opened".to_string());}
 				}
 			}
 		};
@@ -57,7 +57,7 @@ impl PathBanlist {
 		for line in buf_reader.lines() {
 			let line = match line {
 				Ok(line) => line,
-				Err(err) => return Result::Err(format!("Error reading line, error message = {}", err))
+				Err(err) => return Err(format!("Error reading line, error message = {}", err))
 			};
 			
 			match PathBanlist::identify_line(&line) {
@@ -72,7 +72,7 @@ impl PathBanlist {
 							checksum = Some(value);
 						},
 						Some(_val) => {
-							return Err(String::from("More than one checksum in banlist, remove the redundant ones!"));
+							return Err("More than one checksum in banlist, remove the redundant ones!".to_string());
 						}
 					}
 				}
@@ -151,7 +151,7 @@ impl PathBanlist {
 		let line_checksum_u8 = line.as_bytes();
 
 		if line_checksum_u8.len() >= checksum_prefix_u8.len() && 
-		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()]{
+		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()] {
 			return LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..line.len()]));
 		}
 

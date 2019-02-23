@@ -102,9 +102,11 @@ impl EDElement {
 			Ok(EDElement::from_internal(path, modified_time, link_fields))
 		}
 	}
-	/// test_metadata makes a cursory search for if the path
-	/// has been deleted, or if the modified time of the path
-	/// has been changed.
+	/// Does a cursory test for if the path has been deleted,
+	/// or if the modified time of the path has been changed.
+	/// 
+	/// If the metadata does not match the stored metadata, a
+	/// Err<String> is returned.
 	pub fn test_metadata(&self) -> Result<(), String> {
 		let metadata = match fs::symlink_metadata(&self.path) {
 			Ok(metadata) => metadata,
@@ -122,9 +124,9 @@ impl EDElement {
 	/// the file or symbolic link it points to.
 	/// 
 	/// If the symbolic_link or file has changed, or there has
-	/// been corruption in the EDElement struct, an Result::Err
+	/// been corruption in the EDElement struct, an Err
 	/// containing a string describing the error will be returned.
-	/// If the integrity test went fine, it will return an OK(()).
+	/// If the integrity test went fine, it will return an Ok(()).
 	pub fn test_integrity(&self) -> Result<(), String> {
 		let metadata = match fs::symlink_metadata(&self.path) {
 			Ok(metadata) => metadata,
@@ -164,7 +166,7 @@ impl EDElement {
 			},
 			EDVariantFields::Link(link_element) => {
 				let link_path = match fs::read_link(&self.path).unwrap().to_str() {
-					Some(link_path) => String::from(link_path),
+					Some(link_path) => link_path.to_string(),
 					None => panic!("link_path is not a valid utf-8 string!")
 				};
 				if link_path == link_element.link_target {
@@ -207,7 +209,7 @@ impl EDElement {
 
 	/// Returns a hash of the entire EDElement.
 	/// This hash does not represent the file_hash, it
-	/// represents the entire element.
+	/// represents the entire EDElement.
 	/// So if anything changes inside the EDElement,
 	/// this hash would be invalid.
 	pub fn get_hash(&self) -> &[u8; HASH_OUTPUT_LENGTH] {
@@ -215,13 +217,13 @@ impl EDElement {
 	}
 
 	/// Returns an immutable reference to the path
-	/// of this element.
+	/// of this EDElement.
 	pub fn get_path(&self) -> &str {
 		&self.path
 	}
 
-	/// Returns an owned string of the path of this EDElement
-	/// Destroys the EDElement in the process.
+	/// Returns the path of this EDElement as an owned String.
+	/// This will drop the EDElement in the process.
 	pub fn take_path(mut self) -> String {
 		std::mem::replace(&mut self.path, String::new())
 	}

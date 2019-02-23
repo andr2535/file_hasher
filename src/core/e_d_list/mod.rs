@@ -265,7 +265,7 @@ impl EDList {
 			existing_paths.insert(element.get_path());
 		}
 
-		let index_strings = match self.index(&String::from(".")) {
+		let index_strings = match self.index(".") {
 			Ok(strings) => strings,
 			Err(err) => return Err(format!("Error indexing files, Err = {}", err))
 		};
