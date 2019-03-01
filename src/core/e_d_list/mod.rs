@@ -55,7 +55,7 @@ impl EDList {
 		let file = match File::open("./file_hasher_files/file_hashes") {
 			Ok(file) => file,
 			Err(err) => {
-				loop{
+				loop {
 					let answer = list_interface
 						.get_user_answer(&format!("Could not open file_hashes, err = {}\nDo you wish to create a new file? YES/NO", err));
 					if answer == "YES" {
@@ -81,12 +81,8 @@ impl EDList {
 			match EDList::identify_line(line.as_ref()) {
 				LineType::Checksum(value) => {
 					match checksum {
-						None => {
-							checksum = Some(value);
-						},
-						Some(_val) => {
-							return Err("More than one checksum in file_hashes!".to_string());
-						}
+						None => checksum = Some(value),
+						Some(_val) => return Err("More than one checksum in file_hashes!".to_string())
 					}
 				},
 				LineType::EDElement => {
@@ -205,9 +201,7 @@ impl EDList {
 				}
 			}
 			match error {
-				None => {
-					new_list.push(e_d_element);
-				},
+				None => new_list.push(e_d_element),
 				Some(err) => {
 					loop {
 						if cont_delete {
@@ -451,12 +445,11 @@ impl EDList {
 		let line_checksum_u8 = line.as_bytes();
 
 		if line_checksum_u8.len() >= checksum_prefix_u8.len() && 
-		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()]{
-			return LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..line.len()]));
+		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()] {
+			LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..line.len()]))
 		}
-
 		// If line is not identified as checksum it must be an EDElement.
-		LineType::EDElement
+		else {LineType::EDElement}
 	}
 
 	/// This is the only method that must be used to add elements
@@ -470,15 +463,10 @@ impl EDList {
 	}
 
 	pub fn write_hash_file(&self) -> Result<(), String> {
-		let mut file = match File::create("./file_hasher_files/file_hashes") {
-			Ok(file) => file,
-			Err(err) => return Err(format!("Error creating file, Error = {}", err))
-		};
-		match self.write_to_file(&mut file, "file_hashes") {
-			Ok(_ok) => (),
-			Err(err) => return Err(err)
+		match File::create("./file_hasher_files/file_hashes") {
+			Ok(mut file) => self.write_to_file(&mut file, "file_hashes"),
+			Err(err) => Err(format!("Error creating file, Error = {}", err))
 		}
-		Ok(())
 	}
 
 	fn write_backup(&self) -> Result<(), String> {
@@ -493,11 +481,7 @@ impl EDList {
 			Err(err) => return Err(format!("Error creating backup file, err = {}", err))
 		};
 
-		match self.write_to_file(&mut file, "hashbackup") {
-			Ok(_ok) => (),
-			Err(err) => return Err(err)
-		}
-		Ok(())
+		self.write_to_file(&mut file, "hashbackup")
 	}
 
 	/// Used when we need to write hash_file data to a file
@@ -516,9 +500,8 @@ impl EDList {
 		// We use the same conversion method as in PathBanlist, so we reuse it.
 		let checksum_string = format!("{}{}", CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
 		match file.write(checksum_string.as_bytes()) {
-			Ok(_len) => (),
-			Err(err) => return Err(format!("Error writing checksum to the {}, err = {}", file_name, err))
+			Ok(_len) => Ok(()),
+			Err(err) => Err(format!("Error writing checksum to the {}, err = {}", file_name, err))
 		}
-		Ok(())
 	}
 }
