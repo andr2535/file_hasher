@@ -124,7 +124,7 @@ impl EDList {
 	/// Also sends a message to the UserInterface impl, for every
 	/// element that is being tested.
 	pub fn verify(&self, prefix:Option<&str>, list_interface: &impl UserInterface) -> Vec<String> {
-		if !self.verified {panic!("EDList is not verified!");}
+		if !self.verified {unreachable!("EDList is not verified!");}
 		match prefix {
 			Some(prefix) => {
 				let prefix_u8 = prefix.as_bytes();
@@ -170,7 +170,7 @@ impl EDList {
 	/// If the file has a prefix in the banlist, we do not test
 	/// its metadata.
 	pub fn delete(&mut self, list_interface: &impl UserInterface) {
-		if !self.verified {panic!("EDList is not verified!");}
+		if !self.verified {unreachable!("EDList is not verified!");}
 
 		let old_list_len = self.element_list.len();
 		let old_list = std::mem::replace(&mut self.element_list, Vec::with_capacity(old_list_len));
@@ -181,7 +181,7 @@ impl EDList {
 
 		let checksum = &mut self.checksum;
 		let mut delete_element = |e_d_element:EDElement| {
-			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().iter()) {
+			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().into_iter()) {
 				*dest ^= hash_part;
 			}
 			deleted_paths.push(e_d_element.take_path());
@@ -252,7 +252,7 @@ impl EDList {
 	/// When this function returns Ok, it returns a list with
 	/// all the errors created when trying to read files.
 	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<Vec<String>, String> {
-		if !self.verified {panic!("EDList is not verified!");}
+		if !self.verified {unreachable!("EDList is not verified!");}
 		let mut pending_hashing = Vec::new();
 		let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
 		for element in &self.element_list {
@@ -277,14 +277,10 @@ impl EDList {
 		for (i, string) in pending_hashing.into_iter().enumerate() {
 			list_interface.send_message(&format!("Hashing file {:0width$} of {} = {}", i+1,
 			                            pending_hashing_length, string, width=pending_hashing_length_width));
-			let new_element = match EDElement::from_path(string) {
-				Ok(new_element) => new_element,
-				Err(err) => {
-					errors.push(err);
-					continue;
-				}
+			match EDElement::from_path(string) {
+				Ok(new_element) => self.add_e_d_element(new_element),
+				Err(err) => errors.push(err)
 			};
-			self.add_e_d_element(new_element);
 		}
 
 		Ok(errors)
@@ -292,7 +288,7 @@ impl EDList {
 
 	/// Sort this EDList according to the paths of the EDElements.
 	pub fn sort(&mut self) {
-		if !self.verified {panic!("EDList is not verified!");}
+		if !self.verified {unreachable!("EDList is not verified!");}
 		use std::cmp::Ordering;
 		self.element_list.sort_unstable_by(|a:&EDElement,b:&EDElement| {
 			let mut split_a = a.get_path().split('/');
@@ -336,7 +332,7 @@ impl EDList {
 	/// same file_hash as at least one other file to the
 	/// struct implementing UserInterface.
 	pub fn find_duplicates(&self, list_interface: &impl UserInterface) {
-		if !self.verified {panic!("EDList is not verified!");}
+		if !self.verified {unreachable!("EDList is not verified!");}
 		use std::collections::hash_map::Entry;
 		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		let mut file_dups:HashMap<[u8; HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
@@ -456,8 +452,8 @@ impl EDList {
 	/// to the EDList.
 	/// It handles updating the lists internal checksum.
 	fn add_e_d_element(&mut self, element:EDElement) {
-		for (dest, hash_part) in self.checksum.iter_mut().zip(element.get_hash().iter()) {
-			*dest ^= *hash_part;
+		for (dest, hash_part) in self.checksum.iter_mut().zip(element.get_hash().into_iter()) {
+			*dest ^= hash_part;
 		}
 		self.element_list.push(element);
 	}

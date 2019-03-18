@@ -68,8 +68,11 @@ impl EDElement {
 	/// Or if in some other way processing of the file does
 	/// not complete correctly.
 	/// 
-	/// Panics if the path is a symbolic link and its
-	/// link_path is not a valid utf-8 string.
+	/// Also returns an error if the path is a symbolic link
+	/// and its link_path is not a valid utf-8 string. 
+	/// 
+	/// Panics if the filesystem/OS doesn't support reading
+	/// the link_path of a symbolic link
 	pub fn from_path(path:String) -> Result<EDElement, String> {
 		let metadata = match fs::symlink_metadata(&path) {
 			Ok(metadata) => metadata,
@@ -94,12 +97,13 @@ impl EDElement {
 		}
 		else {
 			// The path is a symbolic link
-			let link_path = match fs::read_link(&path).unwrap().to_str(){
-				Some(link_path) => link_path.to_string(),
-				None => panic!(format!("link_path is not a valid utf-8 string!, path to link = {}", path))
-			};
-			let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path});
-			Ok(EDElement::from_internal(path, modified_time, link_fields))
+			match fs::read_link(&path).unwrap().to_str(){
+				Some(link_path) =>  {
+					let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path.to_string()});
+					Ok(EDElement::from_internal(path, modified_time, link_fields))
+				},
+				None => Err(format!("link_path is not a valid utf-8 string!, path to link = {}", path))
+			}
 		}
 	}
 	/// Does a cursory test for if the path has been deleted,
@@ -107,6 +111,10 @@ impl EDElement {
 	/// 
 	/// If the metadata does not match the stored metadata, a
 	/// Err<String> is returned.
+	/// 
+	/// Panics if the filesystem/OS doesn't support reading
+	/// the last modified time of a file, or interpreting
+	/// it as time since epoch
 	pub fn test_metadata(&self) -> Result<(), String> {
 		let metadata = match fs::symlink_metadata(&self.path) {
 			Ok(metadata) => metadata,
@@ -127,6 +135,15 @@ impl EDElement {
 	/// been corruption in the EDElement struct, an Err
 	/// containing a string describing the error will be returned.
 	/// If the integrity test went fine, it will return an Ok(()).
+	/// 
+	/// Panics if one of the following is true
+	/// 
+	/// The filesystem/OS doesn't support reading
+	/// the last modified time of a file, or interpreting
+	/// it as time since epoch.
+	/// 
+	/// The filesystem/OS doesn't support reading
+	/// the link_path of a symbolic link
 	pub fn test_integrity(&self) -> Result<(), String> {
 		let metadata = match fs::symlink_metadata(&self.path) {
 			Ok(metadata) => metadata,
@@ -167,7 +184,7 @@ impl EDElement {
 			EDVariantFields::Link(link_element) => {
 				let link_path = match fs::read_link(&self.path).unwrap().to_str() {
 					Some(link_path) => link_path.to_string(),
-					None => panic!("link_path is not a valid utf-8 string!")
+					None => return Err(format!("link_path is not a valid utf-8 string!, path to link = {}", self.path))
 				};
 				if link_path == link_element.link_target {
 					if time_changed {
@@ -348,7 +365,7 @@ impl EDElement {
 					if character == ']' {cur_phase = Phase::Finished; break;} // Finished generating variables.
 					else {return Err("Last bracket missing from EDElement string!".to_string());}
 				},
-				Phase::Finished => panic!("Match on cur_phase with Phase::Finished, should not be possible!")
+				Phase::Finished => unreachable!("Match on cur_phase with Phase::Finished, should not be possible!")
 			};
 		}
 		if cur_phase != Phase::Finished {
@@ -367,8 +384,8 @@ impl EDElement {
 				// Create Result with EDElement, that has a FileElement.
 				if file_hash.len() != HASH_OUTPUT_LENGTH {return Err("File hash has an invalid length".to_string())};
 				let mut file_hash_array = [0u8; HASH_OUTPUT_LENGTH];
-				for (place, element) in file_hash_array.iter_mut().zip(file_hash.iter()) {
-					*place = *element;
+				for (place, element) in file_hash_array.iter_mut().zip(file_hash.into_iter()) {
+					*place = element;
 				}
 				let variant_fields = EDVariantFields::File(FileElement{file_hash: file_hash_array});
 				Ok(EDElement::from_internal(path, modified_time, variant_fields))
