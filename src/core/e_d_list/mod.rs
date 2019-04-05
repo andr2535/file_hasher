@@ -3,7 +3,7 @@ pub mod e_d_element;
 use self::e_d_element::EDElement;
 use super::shared;
 use super::path_banlist::PathBanlist;
-use crate::core::constants::{HASH_OUTPUT_LENGTH,CHECKSUM_PREFIX};
+use crate::core::constants::{HASH_OUTPUT_LENGTH,FIN_CHECKSUM_PREFIX, XOR_CHECKSUM_PREFIX};
 
 use chrono::prelude::{DateTime, Local};
 use blake2::{Blake2b, digest::{Input, VariableOutput}};
@@ -11,7 +11,8 @@ use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collectio
 use crate::interfacer::UserInterface;
 
 enum LineType {
-	Checksum(String),
+	FinChecksum(String),
+	XorChecksum(String),
 	EDElement
 }
 
@@ -20,9 +21,9 @@ enum LineType {
 /// to the current directory, excepting the files that
 /// lies under the paths that exists in the banlist.
 ///
-/// The checksum is calculated by xoring the element_hash
+/// The xor_checksum is calculated by xoring the element_hash
 /// of the EDElement files together, it is used together
-/// with the EDElements to create a checksum that is saved
+/// with the EDElements to create a checksum that is also saved
 /// to the hashlist file.
 ///
 /// The checksum will always be checked against the
@@ -37,8 +38,7 @@ enum LineType {
 pub struct EDList {
 	element_list: Vec<EDElement>,
 	banlist: PathBanlist,
-	checksum: [u8; HASH_OUTPUT_LENGTH],
-	verified: bool
+	xor_checksum: [u8; HASH_OUTPUT_LENGTH]
 }
 impl EDList {
 	/// Attempts to open the ./file_hasher_files/file_hashes file
@@ -50,17 +50,16 @@ impl EDList {
 	/// 
 	/// Also writes a backup of the file_hashes file,
 	/// to the file_hash_backups folder, when file_hashes has been read.
-	pub fn open(list_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, String> {
+	pub fn open(user_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, String> {
 		let mut e_d_list = EDList::new(banlist);
 		let file = match File::open("./file_hasher_files/file_hashes") {
 			Ok(file) => file,
 			Err(err) => {
 				loop {
-					let answer = list_interface
+					let answer = user_interface
 						.get_user_answer(&format!("Could not open file_hashes, err = {}\nDo you wish to create a new file? YES/NO", err));
 					if answer == "YES" {
-						list_interface.send_message("Created empty list");
-						e_d_list.verified = true;
+						user_interface.send_message("Created empty list");
 						return Ok(e_d_list);
 					}
 					else if answer == "NO" {break;}
@@ -69,7 +68,9 @@ impl EDList {
 			}
 		};
 		let buf_reader = BufReader::new(file);
-		let mut checksum: Option<String> = None;
+		let mut final_checksum: Option<String> = None;
+		let mut file_xor_checksum: Option<[u8;HASH_OUTPUT_LENGTH]> = None;
+		let mut xor_checksum = [0u8;HASH_OUTPUT_LENGTH];
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		for line in buf_reader.lines() {
@@ -79,31 +80,75 @@ impl EDList {
 			};
 			
 			match EDList::identify_line(line.as_ref()) {
-				LineType::Checksum(value) => {
-					match checksum {
-						None => checksum = Some(value),
-						Some(_val) => return Err("More than one checksum in file_hashes!".to_string())
+				LineType::FinChecksum(string) => {
+					match final_checksum {
+						None => final_checksum = Some(string),
+						Some(_val) => return Err("More than one fin_checksum in file_hashes!".to_string())
 					}
 				},
+				LineType::XorChecksum(string) => {
+					match file_xor_checksum {
+						None => {
+							let mut new_xor_checksum = [0u8; HASH_OUTPUT_LENGTH];
+							for (i, chunk) in string.as_bytes().chunks_exact(2).enumerate() {
+								let chunk_str = match String::from_utf8(chunk.to_vec()) {
+									Ok(chunk_str) => chunk_str,
+									Err(_err) => return Err("Error in xor_checksum!".to_string())
+								};
+								match u8::from_str_radix(chunk_str.as_ref(), 16) {
+									Ok(byte) => new_xor_checksum[i] = byte,
+									Err(_err) => return Err("Error in xor_checksum!".to_string())
+								}
+							}
+							file_xor_checksum = Some(new_xor_checksum);
+						},
+						Some(_val) => return Err("More than one xor_checksum in file_hashes!".to_string())
+					}
+				}
 				LineType::EDElement => {
 					let element = match EDElement::from_str(&line) {
 						Ok(element) => element,
 						Err(err) => return Err(format!("Error interpreting EDElement from file_hashes, line = {}, err = {}", line, err))
 					};
 					hasher.process(element.get_hash());
-					e_d_list.add_e_d_element(element);
+					xor_checksum.iter_mut().zip(element.get_hash().iter()).for_each(|(dst, src)| {*dst ^= src});
+					e_d_list.element_list.push(element);
 				}
 			}
 		}
-		hasher.process(&e_d_list.checksum);
-		
-		match checksum {
+		if let Some(file_xor_checksum) = file_xor_checksum {
+			if file_xor_checksum != xor_checksum {return Err("Saved xor_checksum is not valid".to_string());}
+			hasher.process(&file_xor_checksum);
+
+			e_d_list.xor_checksum = file_xor_checksum;
+		}
+		else {
+			#[inline(never)]
+			fn override_missing_xor_checksum(xor_checksum: &[u8;HASH_OUTPUT_LENGTH], e_d_list:&mut EDList, hasher: &mut Blake2b) {
+				e_d_list.xor_checksum = *xor_checksum;
+				hasher.process(xor_checksum);
+			}
+			loop {
+				let answer = user_interface.get_user_answer("There was no xor_checksum in file_hashes.\
+				                            \nDo you want to proceed with loading the file_hashes anyway? YES/NO");
+				match answer.as_ref() {
+					"YES" => {
+						override_missing_xor_checksum(&xor_checksum, &mut e_d_list, &mut hasher);
+						println!("Using hash file, even though the xor_checksum was not present!!!");
+						break;
+					},
+					"NO" => return Err("No xor_checksum was found in file_hashes".to_string()),
+					_ => ()
+				}
+			}
+		};
+
+		match final_checksum {
 			Some(checksum) => {
 				let generated_checksum = shared::blake2_to_string(hasher);
 				if checksum != generated_checksum {
 					return Err("checksum in file_hashes is not valid!".to_string());
 				}
-				e_d_list.verified = checksum == generated_checksum;
 			}
 			None => return Err("file_hashes missing checksum!".to_string())
 		}
@@ -113,9 +158,10 @@ impl EDList {
 		}
 		Ok(e_d_list)
 	}
+
 	/// Creates a new empty EDList.
 	fn new(banlist: PathBanlist) -> EDList {
-		EDList{element_list: Vec::new(), banlist, checksum: [0u8; HASH_OUTPUT_LENGTH], verified:false}
+		EDList{element_list: Vec::new(), banlist, xor_checksum: [0u8; HASH_OUTPUT_LENGTH]}
 	}
 
 	/// Tests every element in the lists integrity against
@@ -123,8 +169,7 @@ impl EDList {
 	/// Returns a vector with strings describing all the errors.
 	/// Also sends a message to the UserInterface impl, for every
 	/// element that is being tested.
-	pub fn verify(&self, prefix:Option<&str>, list_interface: &impl UserInterface) -> Vec<String> {
-		if !self.verified {unreachable!("EDList is not verified!");}
+	pub fn verify(&self, prefix:Option<&str>, user_interface: &impl UserInterface) -> Vec<String> {
 		match prefix {
 			Some(prefix) => {
 				let prefix_u8 = prefix.as_bytes();
@@ -136,25 +181,25 @@ impl EDList {
 						elements_with_prefix.push(e_d_element);
 					}
 				}
-				self.verify_loop(&elements_with_prefix, list_interface)
+				self.verify_loop(&elements_with_prefix, user_interface)
 			}
-			None => self.verify_loop(&self.element_list, list_interface)
+			None => self.verify_loop(&self.element_list, user_interface)
 		}
 	}
 
 	/// Goes through all the elements in the given element_list.
 	/// It returns a list of all the errors in a string format.
-	fn verify_loop<T: AsRef<EDElement>>(&self, element_list: &[T], list_interface: &impl UserInterface) -> Vec<String> {
+	fn verify_loop<T: AsRef<EDElement>>(&self, element_list: &[T], user_interface: &impl UserInterface) -> Vec<String> {
 		let mut error_list = Vec::new();
 		let list_length = element_list.len();
 		let list_length_width = list_length.to_string().chars().count();
 
 		for (file_count, e_d_element) in element_list.iter().enumerate() {
 			let path = e_d_element.as_ref().get_path();
-			list_interface.send_message(&format!("Verifying file {:0width$} of {} = {}", file_count + 1, list_length, path, width=list_length_width));
+			user_interface.send_message(&format!("Verifying file {:0width$} of {} = {}", file_count + 1, list_length, path, width=list_length_width));
 
 			match e_d_element.as_ref().test_integrity() {
-				Ok(_) => (),
+				Ok(()) => (),
 				Err(error_message) => error_list.push(error_message)
 			}
 			if self.banlist.is_in_banlist(path) {
@@ -169,9 +214,7 @@ impl EDList {
 	/// Also removes files that has a prefix in the banlist.
 	/// If the file has a prefix in the banlist, we do not test
 	/// its metadata.
-	pub fn delete(&mut self, list_interface: &impl UserInterface) {
-		if !self.verified {unreachable!("EDList is not verified!");}
-
+	pub fn delete(&mut self, user_interface: &impl UserInterface) {
 		let old_list_len = self.element_list.len();
 		let old_list = std::mem::replace(&mut self.element_list, Vec::with_capacity(old_list_len));
 		let new_list = &mut self.element_list;
@@ -179,10 +222,10 @@ impl EDList {
 		let mut cont_delete = false;
 		let mut deleted_paths:Vec<String> = Vec::new();
 
-		let checksum = &mut self.checksum;
+		let checksum = &mut self.xor_checksum;
 		let mut delete_element = |e_d_element:EDElement| {
-			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().into_iter()) {
-				*dest ^= hash_part;
+			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().iter()) {
+				*dest ^= *hash_part;
 			}
 			deleted_paths.push(e_d_element.take_path());
 		};
@@ -209,7 +252,7 @@ impl EDList {
 							break;
 						}
 						else {
-							let answer = list_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
+							let answer = user_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
 							match answer.as_str() {
 								"YES" => {
 									delete_element(e_d_element);
@@ -234,9 +277,9 @@ impl EDList {
 		if !deleted_paths.is_empty() {
 			let length = deleted_paths.len();
 			let length_width = length.to_string().chars().count();
-			list_interface.send_message(&format!("Deleted paths, amount = {}", length));
+			user_interface.send_message(&format!("Deleted paths, amount = {}", length));
 			for (index, deleted_path) in deleted_paths.iter().enumerate() {
-				list_interface.send_message(&format!("{:0width$} of {}: {}", index + 1, length, deleted_path, width=length_width));
+				user_interface.send_message(&format!("{:0width$} of {}: {}", index + 1, length, deleted_path, width=length_width));
 			}
 		}
 	}
@@ -244,15 +287,14 @@ impl EDList {
 	/// Finds all the files that have not been
 	/// added to the list yet, and puts them into the list.
 	/// It gives messages of all the elements it is hashing
-	/// to the list_interface, while it is in progress.
+	/// to the user_interface, while it is in progress.
 	/// 
 	/// In case of an error when reading the file_index_list,
 	/// we return an error.
 	/// 
 	/// When this function returns Ok, it returns a list with
 	/// all the errors created when trying to read files.
-	pub fn create(&mut self, list_interface: &impl UserInterface) -> Result<Vec<String>, String> {
-		if !self.verified {unreachable!("EDList is not verified!");}
+	pub fn create(&mut self, user_interface: &impl UserInterface) -> Result<Vec<String>, String> {
 		let mut pending_hashing = Vec::new();
 		let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
 		for element in &self.element_list {
@@ -275,7 +317,7 @@ impl EDList {
 		let pending_hashing_length = pending_hashing.len();
 		let pending_hashing_length_width = pending_hashing_length.to_string().chars().count();
 		for (i, string) in pending_hashing.into_iter().enumerate() {
-			list_interface.send_message(&format!("Hashing file {:0width$} of {} = {}", i+1,
+			user_interface.send_message(&format!("Hashing file {:0width$} of {} = {}", i+1,
 			                            pending_hashing_length, string, width=pending_hashing_length_width));
 			match EDElement::from_path(string) {
 				Ok(new_element) => self.add_e_d_element(new_element),
@@ -288,7 +330,6 @@ impl EDList {
 
 	/// Sort this EDList according to the paths of the EDElements.
 	pub fn sort(&mut self) {
-		if !self.verified {unreachable!("EDList is not verified!");}
 		use std::cmp::Ordering;
 		self.element_list.sort_unstable_by(|a:&EDElement,b:&EDElement| {
 			let mut split_a = a.get_path().split('/');
@@ -331,8 +372,7 @@ impl EDList {
 	/// Also sends a list of all the files that have the
 	/// same file_hash as at least one other file to the
 	/// struct implementing UserInterface.
-	pub fn find_duplicates(&self, list_interface: &impl UserInterface) {
-		if !self.verified {unreachable!("EDList is not verified!");}
+	pub fn find_duplicates(&self, user_interface: &impl UserInterface) {
 		use std::collections::hash_map::Entry;
 		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		let mut file_dups:HashMap<[u8; HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
@@ -362,16 +402,16 @@ impl EDList {
 		}
 
 		let mut collision_blocks = 0;
-		list_interface.send_message("Links with same target path:");
+		user_interface.send_message("Links with same target path:");
 		for (key, vector) in link_dups {
 			if vector.len() <= 1 {continue;}
 			collision_blocks += 1;
-			list_interface.send_message(&format!("    links with target path \"{}\":", key));
+			user_interface.send_message(&format!("    links with target path \"{}\":", key));
 			for element in vector {
-				list_interface.send_message(&format!("        {}", element.get_path()));
+				user_interface.send_message(&format!("        {}", element.get_path()));
 			}
 		}
-		list_interface.send_message("Files with the same checksum:");
+		user_interface.send_message("Files with the same checksum:");
 		for (hash, vector) in file_dups {
 			if vector.len() <= 1 {continue;}
 			collision_blocks += 1;
@@ -379,12 +419,12 @@ impl EDList {
 			for byte in hash.iter() {
 				hash_str += &format!("{:02X}", byte);
 			}
-			list_interface.send_message(&format!("    Files with checksum = \"{}\":", hash_str));
+			user_interface.send_message(&format!("    Files with checksum = \"{}\":", hash_str));
 			for element in vector {
-				list_interface.send_message(&format!("        {}", element.get_path()));
+				user_interface.send_message(&format!("        {}", element.get_path()));
 			}
 		}
-		list_interface.send_message(&format!("{} unique collisions found",collision_blocks));
+		user_interface.send_message(&format!("{} unique collisions found",collision_blocks));
 	}
 
 	/// Returns a complete list of all files
@@ -431,29 +471,40 @@ impl EDList {
 		Ok(index_list)
 	}
 
+
+	fn chksum_cmp(prefix: &[u8], cmp_value: &[u8]) -> bool {
+		if cmp_value.len() >= prefix.len() && 
+		   prefix == &cmp_value[..prefix.len()] {
+			true
+		}
+		else {false}
+	}
 	/// Identifies a line as either a checksum, or an EDElement
 	/// in String form.
 	///
 	/// Used to determine how the string should be processed.
 	fn identify_line(line: &str) -> LineType {
 		// Figure out whether line is a checksum.
-		let checksum_prefix_u8 = CHECKSUM_PREFIX.as_bytes();
-		let line_checksum_u8 = line.as_bytes();
+		let fin_checksum_prefix_u8 = FIN_CHECKSUM_PREFIX.as_bytes();
+		let xor_checksum_prefix_u8 = XOR_CHECKSUM_PREFIX.as_bytes();
+		let line_u8 = line.as_bytes();
 
-		if line_checksum_u8.len() >= checksum_prefix_u8.len() && 
-		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()] {
-			LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..line.len()]))
+		if EDList::chksum_cmp(fin_checksum_prefix_u8, line_u8) {
+			LineType::FinChecksum(String::from(&line[fin_checksum_prefix_u8.len()..line.len()]))
+		}
+		else if EDList::chksum_cmp(xor_checksum_prefix_u8, line_u8) {
+			LineType::XorChecksum(String::from(&line[xor_checksum_prefix_u8.len()..line.len()]))
 		}
 		// If line is not identified as checksum it must be an EDElement.
 		else {LineType::EDElement}
 	}
 
 	/// This is the only method that must be used to add elements
-	/// to the EDList.
+	/// to the EDList after it is initialized.
 	/// It handles updating the lists internal checksum.
 	fn add_e_d_element(&mut self, element:EDElement) {
-		for (dest, hash_part) in self.checksum.iter_mut().zip(element.get_hash().into_iter()) {
-			*dest ^= hash_part;
+		for (dest, hash_part) in self.xor_checksum.iter_mut().zip(element.get_hash().iter()) {
+			*dest ^= *hash_part;
 		}
 		self.element_list.push(element);
 	}
@@ -492,10 +543,18 @@ impl EDList {
 			}
 			hasher.process(element.get_hash());
 		}
-		hasher.process(&self.checksum);
+		hasher.process(&self.xor_checksum);
+		
+		
+		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, shared::hash_to_string(&self.xor_checksum));
+		match file.write(xor_checksum_string.as_bytes()) {
+			Ok(_len) => (),
+			Err(err) => return Err(format!("Error writing xor_checksum to the {}, err = {}", file_name, err))
+		}
+
 		// We use the same conversion method as in PathBanlist, so we reuse it.
-		let checksum_string = format!("{}{}", CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
-		match file.write(checksum_string.as_bytes()) {
+		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
+		match file.write(fin_checksum_string.as_bytes()) {
 			Ok(_len) => Ok(()),
 			Err(err) => Err(format!("Error writing checksum to the {}, err = {}", file_name, err))
 		}

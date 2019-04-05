@@ -87,13 +87,13 @@ impl PathBanlist {
 				if hash_string != checksum {
 					return Err(format!("Checksum for banlist is invalid.\n\
 					                    If the current banlist is correct,\nReplace the checksum in the banlist file with the following:\n\
-					                    {}{}", constants::CHECKSUM_PREFIX, hash_string));
+					                    {}{}", constants::FIN_CHECKSUM_PREFIX, hash_string));
 				}
 			},
 			None => {
 					return Err(format!("There is no checksum in the banlist file.\n\
 					                    If the current banlist is correct,\nType the following line into the banlist file:\n\
-					                    {}{}", constants::CHECKSUM_PREFIX, hash_string));
+					                    {}{}", constants::FIN_CHECKSUM_PREFIX, hash_string));
 			}
 		}
 
@@ -107,7 +107,7 @@ impl PathBanlist {
 	/// the error.
 	fn new(banlist_interfacer: impl UserInterface) -> Result<PathBanlist, String> {
 		match create_dir_all("./file_hasher_files") {
-			Ok(_res) => (),
+			Ok(()) => (),
 			Err(err) => return Err(format!("Error creating file_hasher directory, Error = {}", err))
 		};
 		
@@ -127,7 +127,7 @@ impl PathBanlist {
 			hasher.process(string.as_bytes());
 		}
 
-		let write_result = file.write(format!("{}{}", constants::CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes());
+		let write_result = file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes());
 
 		match write_result {
 			Ok(_len) => PathBanlist::open(banlist_interfacer),
@@ -147,12 +147,12 @@ impl PathBanlist {
 		};
 
 		// Figure out whether line is a checksum.
-		let checksum_prefix_u8 = constants::CHECKSUM_PREFIX.as_bytes();
+		let checksum_prefix_u8 = constants::FIN_CHECKSUM_PREFIX.as_bytes();
 		let line_checksum_u8 = line.as_bytes();
 
 		if line_checksum_u8.len() >= checksum_prefix_u8.len() && 
 		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()] {
-			return LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..line.len()]));
+			return LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..]));
 		}
 
 		// If line is not identified as a comment or a checksum, it must be a bannedpath.
