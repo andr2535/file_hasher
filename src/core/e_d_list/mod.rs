@@ -111,7 +111,7 @@ impl EDList {
 						Err(err) => return Err(format!("Error interpreting EDElement from file_hashes, line = {}, err = {}", line, err))
 					};
 					hasher.process(element.get_hash());
-					xor_checksum.iter_mut().zip(element.get_hash().iter()).for_each(|(dst, src)| {*dst ^= src});
+					xor_checksum.iter_mut().zip(element.get_hash().iter()).for_each(|(dst, src)| *dst ^= src);
 					e_d_list.element_list.push(element);
 				}
 			}
@@ -123,6 +123,8 @@ impl EDList {
 			e_d_list.xor_checksum = file_xor_checksum;
 		}
 		else {
+			/// Making this a function should make it hard for a single program counter
+			/// corruption to introduce an invalid value into the EDList
 			#[inline(never)]
 			fn override_missing_xor_checksum(xor_checksum: &[u8;HASH_OUTPUT_LENGTH], e_d_list:&mut EDList, hasher: &mut Blake2b) {
 				e_d_list.xor_checksum = *xor_checksum;
@@ -406,9 +408,9 @@ impl EDList {
 		for (key, vector) in link_dups {
 			if vector.len() <= 1 {continue;}
 			collision_blocks += 1;
-			user_interface.send_message(&format!("    links with target path \"{}\":", key));
+			user_interface.send_message(&format!("{:4}links with target path = \"{}\":", "", key));
 			for element in vector {
-				user_interface.send_message(&format!("        {}", element.get_path()));
+				user_interface.send_message(&format!("{:8}{}","", element.get_path()));
 			}
 		}
 		user_interface.send_message("Files with the same checksum:");
@@ -419,9 +421,9 @@ impl EDList {
 			for byte in hash.iter() {
 				hash_str += &format!("{:02X}", byte);
 			}
-			user_interface.send_message(&format!("    Files with checksum = \"{}\":", hash_str));
+			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", hash_str));
 			for element in vector {
-				user_interface.send_message(&format!("        {}", element.get_path()));
+				user_interface.send_message(&format!("{:8}{}", "", element.get_path()));
 			}
 		}
 		user_interface.send_message(&format!("{} unique collisions found",collision_blocks));
