@@ -249,23 +249,6 @@ impl EDElement {
 		&self.variant_fields
 	}
 
-	/// Convert EDElement to a String representation, this
-	/// string can be parsed back to an EDElement
-	/// by the function from_str.
-	pub fn to_string(&self) -> String {
-		let variant_fields = match &self.variant_fields {
-			EDVariantFields::File(file) => {
-				let mut file_hash = String::with_capacity(HASH_OUTPUT_LENGTH*2);
-				for element in file.file_hash.iter(){
-					file_hash += &format!("{:02X}", element);
-				}
-				format!("file({})", file_hash)
-			},
-			EDVariantFields::Link(link) => format!("link({})", link.link_target.replace("\\", "\\\\").replace(")", "\\)"))
-		};
-		format!("[{},{},{}]", self.path.replace("\\", "\\\\").replace(",", "\\,"), self.modified_time, variant_fields)
-	}
-
 	/// Parses a string into an EDElement struct, if the string
 	/// does not describe a valid EDElement struct, it will return
 	/// a String containing an error message.
@@ -400,6 +383,23 @@ impl EDElement {
 		}
 	}
 }
+
+impl std::fmt::Display for EDElement {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		let variant_fields = match &self.variant_fields {
+			EDVariantFields::File(file) => {
+				let mut file_hash = String::with_capacity(HASH_OUTPUT_LENGTH*2);
+				for element in file.file_hash.iter(){
+					file_hash += &format!("{:02X}", element);
+				}
+				format!("file({})", file_hash)
+			},
+			EDVariantFields::Link(link) => format!("link({})", link.link_target.replace("\\", "\\\\").replace(")", "\\)"))
+		};
+		write!(f, "[{},{},{}]", self.path.replace("\\", "\\\\").replace(",", "\\,"), self.modified_time, variant_fields)
+	}
+}
+
 impl AsRef<EDElement> for EDElement {
 	#[inline]
 	fn as_ref(&self) -> &EDElement {

@@ -475,11 +475,7 @@ impl EDList {
 
 
 	fn chksum_cmp(prefix: &[u8], cmp_value: &[u8]) -> bool {
-		if cmp_value.len() >= prefix.len() && 
-		   prefix == &cmp_value[..prefix.len()] {
-			true
-		}
-		else {false}
+		cmp_value.len() >= prefix.len() && prefix == &cmp_value[..prefix.len()]
 	}
 	/// Identifies a line as either a checksum, or an EDElement
 	/// in String form.
@@ -497,7 +493,7 @@ impl EDList {
 		else if EDList::chksum_cmp(xor_checksum_prefix_u8, line_u8) {
 			LineType::XorChecksum(String::from(&line[xor_checksum_prefix_u8.len()..line.len()]))
 		}
-		// If line is not identified as checksum it must be an EDElement.
+		// If line is not identified as either checksum variant it must be an EDElement.
 		else {LineType::EDElement}
 	}
 
