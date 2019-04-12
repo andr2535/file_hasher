@@ -40,6 +40,8 @@ pub enum EDVariantFields {
 /// 
 /// element_hash contains a hash value of all the fields in
 /// the EDElement object.
+/// element_hash should never be identical between two different
+/// EDElement objects, even if they have the same file_hash.
 pub struct EDElement {
 	path: String,
 	modified_time: u64,
@@ -47,6 +49,8 @@ pub struct EDElement {
 	element_hash: [u8; HASH_OUTPUT_LENGTH]
 }
 impl EDElement {
+	/// from_internal creates an EDElement from the given arguments
+	/// while also creating the element_hash for the EDElement.
 	fn from_internal(path:String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		hasher.process(path.as_bytes());

@@ -26,15 +26,14 @@ enum LineType {
 /// with the EDElements to create a checksum that is also saved
 /// to the hashlist file.
 ///
+/// The xor_checksum is the checksum of each EDElement object
+/// xored together.
+/// 
 /// The checksum will always be checked against the
 /// saved checksum in the file, when loading the list from
 /// file. Also the saved checksum is used in the memory,
 /// such that it is very hard for a memory error to cause
 /// data corruption in the file after a reload.
-///
-/// The verified boolean is used to be sure that
-/// the checksum test went well(in case of the program counter
-/// skipping or some case similar)
 pub struct EDList {
 	element_list: Vec<EDElement>,
 	banlist: PathBanlist,
@@ -51,7 +50,6 @@ impl EDList {
 	/// Also writes a backup of the file_hashes file,
 	/// to the file_hash_backups folder, when file_hashes has been read.
 	pub fn open(user_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, String> {
-		let mut e_d_list = EDList::new(banlist);
 		let file = match File::open("./file_hasher_files/file_hashes") {
 			Ok(file) => file,
 			Err(err) => {
@@ -59,14 +57,26 @@ impl EDList {
 					let answer = user_interface
 						.get_user_answer(&format!("Could not open file_hashes, err = {}\nDo you wish to create a new file? YES/NO", err));
 					if answer == "YES" {
-						user_interface.send_message("Created empty list");
-						return Ok(e_d_list);
+						// Prevent a single pc corruption from jumping to the code where a clean EDList is returned.
+						#[inline(never)]
+						fn create_empty_e_d_list(user_interface: impl UserInterface, banlist: PathBanlist) -> Box<EDList> {
+							user_interface.send_message("Created empty list");
+							// Using Box such that the returned value from this function will not be valid
+							// in case of the pc jumping to this place from the open method on EDList.
+							// Even if the program should run successfully after making such a jump, it will
+							// write an invalid xor_checksum to the hash_file, which will create an error the
+							// next time the file is opened.
+							Box::new(EDList::new(banlist))
+						}
+						return Ok(*create_empty_e_d_list(user_interface, banlist));
 					}
 					else if answer == "NO" {break;}
 				}
-				return Err(String::from("Error opening file_hashes"));
+				return Err("Failed to open file_hashes".to_string());
 			}
 		};
+		let mut e_d_list = EDList::new(banlist);
+
 		let buf_reader = BufReader::new(file);
 		let mut final_checksum: Option<String> = None;
 		let mut file_xor_checksum: Option<[u8;HASH_OUTPUT_LENGTH]> = None;
@@ -123,8 +133,14 @@ impl EDList {
 			e_d_list.xor_checksum = file_xor_checksum;
 		}
 		else {
-			/// Making this a function should make it hard for a single program counter
-			/// corruption to introduce an invalid value into the EDList
+			/// This function should make it hard for a single program counter
+			/// corruption to introduce an invalid value into the EDList.
+			/// 
+			/// If the program should jump to this function it will not return a valid EDList,
+			/// which would cause the program to probably not be able to terminate correctly.
+			/// 
+			/// Should the program finish anyway,
+			/// the checksum of the EDList would nearly certainly be wrong.
 			#[inline(never)]
 			fn override_missing_xor_checksum(xor_checksum: &[u8;HASH_OUTPUT_LENGTH], e_d_list:&mut EDList, hasher: &mut Blake2b) {
 				e_d_list.xor_checksum = *xor_checksum;
