@@ -523,6 +523,7 @@ impl EDList {
 		self.element_list.push(element);
 	}
 
+	/// Write EDList to ./file_hasher_files/file_hashes
 	pub fn write_hash_file(&self) -> Result<(), String> {
 		match File::create("./file_hasher_files/file_hashes") {
 			Ok(mut file) => self.write_to_file(&mut file, "file_hashes"),

@@ -122,12 +122,12 @@ impl EDElement {
 	pub fn test_metadata(&self) -> Result<(), String> {
 		let metadata = match fs::symlink_metadata(&self.path) {
 			Ok(metadata) => metadata,
-			Err(_err) => return Err(format!("Could not open path \"{}\"", &self.path))
+			Err(_err) => return Err(format!("Could not open path \"{}\"", self.path))
 		};
-		if metadata.is_dir() {return Err(format!("Path \"{}\" is a directory", &self.path))}
+		if metadata.is_dir() {return Err(format!("Path \"{}\" is a directory", self.path))}
 		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 		if modified_time != self.modified_time {
-			Err(format!("File with path \"{}\", has a different modified time than expected", &self.path))
+			Err(format!("File with path \"{}\", has a different modified time than expected", self.path))
 		}
 		else {Ok(())}
 	}
@@ -151,9 +151,9 @@ impl EDElement {
 	pub fn test_integrity(&self) -> Result<(), String> {
 		let metadata = match fs::symlink_metadata(&self.path) {
 			Ok(metadata) => metadata,
-			Err(err) => return Err(format!("Error reading metadata from file {}, err = {}", &self.path, err))
+			Err(err) => return Err(format!("Error reading metadata from file {}, err = {}", self.path, err))
 		};
-		if metadata.is_dir() {return Err(format!("Path {} is a directory, directories cannot be a EDEelement!", &self.path));}
+		if metadata.is_dir() {return Err(format!("Path {} is a directory, directories cannot be a EDEelement!", self.path));}
 		
 		let time_changed = {
 			let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
@@ -164,25 +164,25 @@ impl EDElement {
 			EDVariantFields::File(file_element) => {
 				let file = match File::open(&self.path) {
 					Ok(file) => file,
-					Err(err) => return Err(format!("Error opening file {} for testing, err = {}", &self.path, err))
+					Err(err) => return Err(format!("Error opening file {} for testing, err = {}", self.path, err))
 				};
 				let file_hash = match EDElement::hash_file(file) {
 					Ok(file_hash) => file_hash,
-					Err(err) => return Err(format!("Error trying to read file {}, err = {}", &self.path, err))
+					Err(err) => return Err(format!("Error trying to read file {}, err = {}", self.path, err))
 				};
 				if file_hash == file_element.file_hash {
 					if time_changed {
-						Err(format!("File \"{}\" has a valid checksum, but the time has been changed", &self.path))
+						Err(format!("File \"{}\" has a valid checksum, but the time has been changed", self.path))
 					}
 					else {
 						Ok(())
 					}
 				}
 				else if time_changed {
-					Err(format!("File \"{}\" has an invalid checksum, and it's time has been changed", &self.path))
+					Err(format!("File \"{}\" has an invalid checksum, and it's time has been changed", self.path))
 				}
 				else {
-					Err(format!("File \"{}\" has an invalid checksum", &self.path))
+					Err(format!("File \"{}\" has an invalid checksum", self.path))
 				}
 			},
 			EDVariantFields::Link(link_element) => {
@@ -192,17 +192,17 @@ impl EDElement {
 				};
 				if link_path == link_element.link_target {
 					if time_changed {
-						Err(format!("Time changed on link \"{}\", but link has valid target path", &self.path))
+						Err(format!("Time changed on link \"{}\", but link has valid target path", self.path))
 					}
 					else {
 						Ok(())
 					}
 				}
 				else if time_changed {
-					Err(format!("Link \"{}\", has an invalid target path, and it's modified time has changed", &self.path))
+					Err(format!("Link \"{}\", has an invalid target path, and it's modified time has changed", self.path))
 				}
 				else {
-					Err(format!("Link \"{}\", has an invalid target path", &self.path))
+					Err(format!("Link \"{}\", has an invalid target path", self.path))
 				}
 			}
 		}
