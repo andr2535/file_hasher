@@ -362,9 +362,8 @@ impl EDList {
 					// If we get here then both are subdirectories, with different roots.
 					return cmp_state;
 				}
-				let cmp = a.cmp(b);
 				if cmp_state == Ordering::Equal {
-					cmp_state = cmp;
+					cmp_state = a.cmp(b);
 				}
 				
 				a_next = split_a.next();
@@ -433,11 +432,7 @@ impl EDList {
 		for (hash, vector) in file_dups {
 			if vector.len() <= 1 {continue;}
 			collision_blocks += 1;
-			let mut hash_str = String::with_capacity(HASH_OUTPUT_LENGTH*2);
-			for byte in hash.iter() {
-				hash_str += &format!("{:02X}", byte);
-			}
-			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", hash_str));
+			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", shared::hash_to_string(&hash)));
 			for element in vector {
 				user_interface.send_message(&format!("{:8}{}", "", element.get_path()));
 			}
@@ -468,7 +463,7 @@ impl EDList {
 
 			let file_path = match entry.file_name().into_string() {
 				Ok(file_name) => format!("{}/{}", path, file_name),
-				Err(_err) => return Err("Failed to convert OsString to String in index".to_string())
+				Err(_err) => return Err(format!("Failed to convert OsString to String in path: {}", path))
 			};
 			// If file_path is in banlist, we should not index it.
 			if self.banlist.is_in_banlist(&file_path) {continue;}
@@ -515,7 +510,7 @@ impl EDList {
 
 	/// This is the only method that must be used to add elements
 	/// to the EDList after it is initialized.
-	/// It handles updating the lists internal checksum.
+	/// It handles updating the lists internal xor checksum.
 	fn add_e_d_element(&mut self, element:EDElement) {
 		for (dest, hash_part) in self.xor_checksum.iter_mut().zip(element.get_hash().iter()) {
 			*dest ^= *hash_part;
