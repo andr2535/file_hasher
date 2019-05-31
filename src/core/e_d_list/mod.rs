@@ -397,9 +397,7 @@ impl EDList {
 			match element.get_variant() {
 				e_d_element::EDVariantFields::File(file) => {
 					match file_dups.entry(file.file_hash) {
-						Entry::Occupied(entry) => {
-							entry.into_mut().push(element);
-						},
+						Entry::Occupied(entry) => entry.into_mut().push(element),
 						Entry::Vacant(entry) => {
 							entry.insert(vec!(element));
 						}
@@ -407,9 +405,7 @@ impl EDList {
 				},
 				e_d_element::EDVariantFields::Link(link) => {
 					match link_dups.entry(&link.link_target) {
-						Entry::Occupied(entry) => {
-							entry.into_mut().push(element);
-						},
+						Entry::Occupied(entry) => entry.into_mut().push(element),
 						Entry::Vacant(entry) => {
 							entry.insert(vec!(element));
 						}
@@ -484,8 +480,10 @@ impl EDList {
 		Ok(index_list)
 	}
 
-
-	fn chksum_cmp(prefix: &[u8], cmp_value: &[u8]) -> bool {
+	/// Compared the cmp_value to the prefix, if cmp_value has
+	/// the bytes in prefix as a prefix, we return true.
+	/// Else we return false.
+	fn prefix_cmp(prefix: &[u8], cmp_value: &[u8]) -> bool {
 		cmp_value.len() >= prefix.len() && prefix == &cmp_value[..prefix.len()]
 	}
 	/// Identifies a line as either a checksum, or an EDElement
@@ -498,10 +496,10 @@ impl EDList {
 		let xor_checksum_prefix_u8 = XOR_CHECKSUM_PREFIX.as_bytes();
 		let line_u8 = line.as_bytes();
 
-		if EDList::chksum_cmp(fin_checksum_prefix_u8, line_u8) {
+		if EDList::prefix_cmp(fin_checksum_prefix_u8, line_u8) {
 			LineType::FinChecksum(String::from(&line[fin_checksum_prefix_u8.len()..line.len()]))
 		}
-		else if EDList::chksum_cmp(xor_checksum_prefix_u8, line_u8) {
+		else if EDList::prefix_cmp(xor_checksum_prefix_u8, line_u8) {
 			LineType::XorChecksum(String::from(&line[xor_checksum_prefix_u8.len()..line.len()]))
 		}
 		// If line is not identified as either checksum variant it must be an EDElement.
@@ -567,6 +565,51 @@ impl EDList {
 		match file.write(fin_checksum_string.as_bytes()) {
 			Ok(_len) => Ok(()),
 			Err(err) => Err(format!("Error writing checksum to the {}, err = {}", file_name, err))
+		}
+	}
+
+	/// Used to generate a checksum, using only EDElemnts
+	/// whose path contains the relative path.
+	/// 
+	/// To minimize user errors, a relative_path must end
+	/// with a forward slash.
+	/// 
+	/// The relative_path part of the EDElements will not be
+	/// included in the generated checksum.
+	/// This makes it possible to compare to another different
+	/// paths checksum.
+	pub fn relative_checksum(&self, user_interface: &impl UserInterface) {
+		let relative_path = loop {
+			let relative_path = user_interface.get_user_answer("Enter the relative path:");
+			// We should only accept a relative path that ends in a forward slash.
+			if let Some('/') = relative_path.chars().into_iter().rev().next() {
+				break relative_path;
+			}
+			else {
+				user_interface.send_message("The relative path must end with a forward slash \"/\"");
+			}
+		};
+		
+		let relative_path_u8 = relative_path.as_bytes();
+		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut elements_found = false;
+		self.element_list.iter()
+		    .filter(|e_d_element| EDList::prefix_cmp(relative_path_u8, e_d_element.get_path().as_bytes()))
+		    .for_each(|e_d_element|
+		{
+			elements_found = true;
+			hasher.process(&e_d_element.get_path().as_bytes()[relative_path_u8.len()..]);
+			hasher.process(&e_d_element.get_modified_time().to_le_bytes());
+			match e_d_element.get_variant() {
+				e_d_element::EDVariantFields::File(file) => hasher.process(&file.file_hash),
+				e_d_element::EDVariantFields::Link(link) => hasher.process(&link.link_target.as_bytes())
+			}
+		});
+		if elements_found {
+			user_interface.send_message(&format!("Relative hash:\n{}", shared::blake2_to_string(hasher)));
+		}
+		else {
+			user_interface.send_message("No files were found in the specified path");
 		}
 	}
 }

@@ -250,6 +250,10 @@ impl EDElement {
 		std::mem::replace(&mut self.path, String::new())
 	}
 
+	pub fn get_modified_time(&self) -> u64 {
+		self.modified_time
+	}
+
 	pub fn get_variant(&self) -> &EDVariantFields {
 		&self.variant_fields
 	}
