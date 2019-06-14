@@ -582,7 +582,7 @@ impl EDList {
 		let relative_path = loop {
 			let relative_path = user_interface.get_user_answer("Enter the relative path:");
 			// We should only accept a relative path that ends in a forward slash.
-			if let Some('/') = relative_path.chars().into_iter().rev().next() {
+			if let Some('/') = relative_path.chars().rev().next() {
 				break relative_path;
 			}
 			else {

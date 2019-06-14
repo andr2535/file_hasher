@@ -1,7 +1,7 @@
 [package]
 name = "file_hasher"
 version = "0.1.0"
-authors = ["Andreas Ejdesgaard <andreasejdesgaard@hotmail.com>"]
+authors = ["Andreas Ejdesgaard <andreasejdesgaard@protonmail.com>"]
 edition = "2018"
 
 [profile.release]

@@ -104,8 +104,14 @@ impl EDElement {
 			// The path is a symbolic link
 			match fs::read_link(&path).unwrap().to_str(){
 				Some(link_path) =>  {
-					let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path.to_string()});
-					Ok(EDElement::from_internal(path, modified_time, link_fields))
+					// Verify that the link path exists.
+					match EDElement::verify_link_path(&path, &link_path) {
+						Ok(()) => {
+							let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path.to_string()});
+							Ok(EDElement::from_internal(path, modified_time, link_fields))
+						},
+						Err(err) => Err(err)
+					}
 				},
 				None => Err(format!("link_path is not a valid utf-8 string!, path to link = {}", path))
 			}
@@ -187,16 +193,17 @@ impl EDElement {
 				}
 			},
 			EDVariantFields::Link(link_element) => {
-				let link_path = match fs::read_link(&self.path).unwrap().to_str() {
-					Some(link_path) => link_path.to_string(),
-					None => return Err(format!("link_path is not a valid utf-8 string!, path to link = {}", self.path))
+				let link_target = match fs::read_link(&self.path).unwrap().to_str() {
+					Some(link_target) => link_target.to_string(),
+					None => return Err(format!("link_target is not a valid utf-8 string!, path to link = {}", self.path))
 				};
-				if link_path == link_element.link_target {
+				if link_target == link_element.link_target {
 					if time_changed {
 						Err(format!("Time changed on link \"{}\", but link has valid target path", self.path))
 					}
 					else {
-						Ok(())
+						// Verify that the link target exists.
+						EDElement::verify_link_path(&self.path, &link_target)
 					}
 				}
 				else if time_changed {
@@ -206,6 +213,21 @@ impl EDElement {
 					Err(format!("Link \"{}\", has an invalid target path", self.path))
 				}
 			}
+		}
+	}
+	fn verify_link_path(path: &str, link_target: &str) -> Result<(), String> {
+		use std::path::Path;
+		let current_path = {
+			match Path::new(path).parent() {
+				Some(path) => path,
+				None => return Err(format!("Link with path '{}', has link_target: '{}', which doesn't have a parent!", path, link_target))
+			}
+		};
+		let real_link_target = current_path.join(link_target);
+		match File::open(&real_link_target) {
+			// If case Ok, we have verified that the link is valid.
+			Ok(_linked_to_file) => Ok(()),
+			Err(err) => Err(format!("Error opening file linked to by: '{}', link_target: '{}', error: '{}'", path, link_target, err))
 		}
 	}
 	/// hash_file reads a file, and creates a hash for it in an
