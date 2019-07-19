@@ -1,32 +1,48 @@
+/*
+	This file is part of file_hasher.
+
+	file_hasher is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	file_hasher is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use blake2::{Blake2b, digest::{Input, VariableOutput}};
 
 use crate::core::constants::HASH_OUTPUT_LENGTH;
 use crate::core::shared;
 
-#[derive(Debug)]
 /// FileElement is a struct that contains the fields that
 /// a file needs, but a symbolic link does not need.
+#[derive(Debug)]
 pub struct FileElement {
 	pub file_hash: [u8; HASH_OUTPUT_LENGTH]
 }
 
-#[derive(Debug)]
 /// LinkElement is a struct that contains the fields, that
 /// a symbolic link needs, that a file does not need.
+#[derive(Debug)]
 pub struct LinkElement {
 	pub link_target: String
 }
 
-#[derive(Debug)]
 /// EDVariantFields is used to manage whether we are storing
 /// a file or a symbolic link.
+#[derive(Debug)]
 pub enum EDVariantFields {
 	File(FileElement),
 	Link(LinkElement)
 }
 
-#[derive(Debug)]
 /// EDElement, a shorthand for Error-detect-element
 /// It should be used by a EDList object, for safely storing
 /// metadata about files and links.
@@ -43,6 +59,7 @@ pub enum EDVariantFields {
 /// the EDElement object.
 /// element_hash should never be identical between two different
 /// EDElement objects, even if they have the same file_hash.
+#[derive(Debug)]
 pub struct EDElement {
 	path: String,
 	modified_time: u64,
@@ -55,7 +72,7 @@ impl EDElement {
 	fn from_internal(path:String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		hasher.process(path.as_bytes());
-		hasher.process(modified_time.to_string().as_bytes());
+		hasher.process(&modified_time.to_le_bytes());
 		match &variant_fields {
 			EDVariantFields::File(file) => hasher.process(&file.file_hash),
 			EDVariantFields::Link(link) => hasher.process(link.link_target.as_bytes())
@@ -105,13 +122,9 @@ impl EDElement {
 			match fs::read_link(&path).unwrap().to_str(){
 				Some(link_path) =>  {
 					// Verify that the link path exists.
-					match EDElement::verify_link_path(&path, &link_path) {
-						Ok(()) => {
-							let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path.to_string()});
-							Ok(EDElement::from_internal(path, modified_time, link_fields))
-						},
-						Err(err) => Err(err)
-					}
+					EDElement::verify_link_path(&path, &link_path)?;
+					let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path.to_string()});
+					Ok(EDElement::from_internal(path, modified_time, link_fields))
 				},
 				None => Err(format!("link_path is not a valid utf-8 string!, path to link = {}", path))
 			}
@@ -215,6 +228,7 @@ impl EDElement {
 			}
 		}
 	}
+	
 	fn verify_link_path(path: &str, link_target: &str) -> Result<(), String> {
 		use std::path::Path;
 		let current_path = {
@@ -239,10 +253,7 @@ impl EDElement {
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		loop {
-			let result_size = match file.read(&mut buffer) {
-				Ok(res) => res,
-				Err(err) => return Err(err)
-			};
+			let result_size = file.read(&mut buffer)?;
 			hasher.process(&buffer[0..result_size]);
 			if result_size != buffer_size {break;}
 		}
@@ -280,6 +291,23 @@ impl EDElement {
 		&self.variant_fields
 	}
 
+	/// Used for generating the hash used in versions prior to
+	/// the list version 1.0.
+	/// 
+	/// Will be replaced if a newer list version is made.
+	pub fn generate_pre_v_1_0_hash(&self) -> [u8;HASH_OUTPUT_LENGTH] {
+		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		hasher.process(self.path.as_bytes());
+		hasher.process(self.modified_time.to_string().as_bytes());
+		match &self.variant_fields {
+			EDVariantFields::File(file) => hasher.process(&file.file_hash),
+			EDVariantFields::Link(link) => hasher.process(link.link_target.as_bytes())
+		}
+		let mut element_hash = [0u8; HASH_OUTPUT_LENGTH];
+		hasher.variable_result(&mut element_hash).unwrap();
+		element_hash
+	}
+
 	/// Parses a string into an EDElement struct, if the string
 	/// does not describe a valid EDElement struct, it will return
 	/// a String containing an error message.
@@ -300,10 +328,10 @@ impl EDElement {
 		let mut path = String::new();
 		let mut time_string = String::new();
 		let mut variant_string = String::new();
-		let mut file_hash:Vec<u8> = vec![];
+		let mut file_hash = vec![];
 		let mut link_path = String::new();
 
-		let mut last_file_hash_char:Option<char> = None;
+		let mut last_file_hash_char = None;
 		let mut escape_char_set = false;
 
 		for character in element_string.chars() {

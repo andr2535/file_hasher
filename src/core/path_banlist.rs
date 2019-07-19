@@ -1,3 +1,20 @@
+/*
+	This file is part of file_hasher.
+
+	file_hasher is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	file_hasher is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use blake2::{Blake2b, digest::{Input, VariableOutput}};
 use crate::interfacer::UserInterface;
@@ -16,9 +33,9 @@ enum CharMapper {
 	More(HashMap<char, CharMapper>)
 }
 
-#[derive(Debug)]
 /// PathBanlist is a HashSet that contains all the paths that
 /// should not be hashed by the EDList objects.
+#[derive(Debug)]
 pub struct PathBanlist {
 	banned_paths:HashMap<char, CharMapper>
 }
@@ -161,32 +178,45 @@ impl PathBanlist {
 	
 	/// Used internally by the path_banlist open constructor,
 	/// to insert the needed paths into the banlist.
-	fn insert_to_banlist(mut char_iter: std::str::Chars<'_>, hashmap: &mut HashMap<char, CharMapper>) -> Option<CharMapper> {
+	/// 
+	/// The returned value should be ignored by the caller,
+	/// unless the caller is also insert_to_banlist.
+	fn insert_to_banlist(mut char_iter: std::str::Chars, hashmap: &mut HashMap<char, CharMapper>) -> Option<CharMapper> {
 		let character = match char_iter.next() {
 			Some(character) => character,
+			// If line is ended, we make the calling insert_to_banlist
+			// insert a Terminator.
 			None => return Some(CharMapper::Terminator)
 		};
+
 		let new_char_mapper = match hashmap.get_mut(&character) {
-			Some(char_map) => {
-				match char_map {
-					CharMapper::Terminator => None,
-					CharMapper::More(inner_hashmap) => PathBanlist::insert_to_banlist(char_iter, inner_hashmap)
-				}
-			},
+			// If there is already an inner hashmap,
+			// we will insert the rest of the string into it.
+			Some(CharMapper::More(inner_hashmap)) => PathBanlist::insert_to_banlist(char_iter, inner_hashmap),
+			// If we hit a terminator, we do not need to continue,
+			// since a prefix of the string is already terminating
+			Some(CharMapper::Terminator) => None,
+			// If there is none, we must create a new hashmap,
+			// and place it according to our chars value.
 			None => {
 				let mut new_hashmap = HashMap::new();
+				// Insert the remaining letters into the newly created hashmap recursively.
 				match PathBanlist::insert_to_banlist(char_iter, &mut new_hashmap) {
-					Some(char_mapper) => hashmap.insert(character, char_mapper),
-					None => hashmap.insert(character, CharMapper::More(new_hashmap))
-				};
-				None
+					Some(char_mapper) => Some(char_mapper),
+					None => Some(CharMapper::More(new_hashmap))
+				}
 			}
 		};
+		
+		// Because we build the hashmap from the inside, we will
+		// take the returned CharMapper(if any) from the recursive call
+		// and insert it into the character position in the given hashmap.
 		if let Some(new_char_mapper) = new_char_mapper {
 			hashmap.insert(character, new_char_mapper);
 		}
 		None
 	}
+	
 	/// Used to test whether the given path has any
 	/// of its prefixes defined in the banlist.
 	/// Returns true, if there is such a prefix, else it
