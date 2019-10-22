@@ -225,15 +225,9 @@ impl PathBanlist {
 		let mut hashmap = &self.banned_paths;
 		for character in path.chars() {
 			match hashmap.get(&character) {
-				Some(char_map) => {
-					match char_map {
-						CharMapper::More(next_map) => hashmap = next_map,
-						CharMapper::Terminator => return true
-					}
-				},
-				None => {
-					return false;
-				}
+				Some(CharMapper::More(next_map)) => hashmap = next_map,
+				Some(CharMapper::Terminator) => return true,
+				None => return false
 			}
 		}
 		false

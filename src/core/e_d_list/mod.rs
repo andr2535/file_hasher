@@ -348,11 +348,10 @@ impl EDList {
 		let mut cont_delete = false;
 		let mut deleted_paths:Vec<String> = Vec::new();
 
-		let checksum = &mut self.xor_checksum;
+		let xor_checksum = &mut self.xor_checksum;
+
 		let mut delete_element = |e_d_element:EDElement| {
-			for (dest, hash_part) in checksum.iter_mut().zip(e_d_element.get_hash().iter()) {
-				*dest ^= *hash_part;
-			}
+			xor_checksum.iter_mut().zip(e_d_element.get_hash().iter()).for_each(|(dest, hash_part)| *dest ^= *hash_part);
 			deleted_paths.push(e_d_element.take_path());
 		};
 
@@ -371,41 +370,35 @@ impl EDList {
 			}
 			match error {
 				None => new_list.push(e_d_element),
-				Some(err) => {
-					loop {
-						if cont_delete {
+				Some(err) => loop {
+					if cont_delete {
+						delete_element(e_d_element);
+						break;
+					}
+					let answer = user_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
+					match answer.as_str() {
+						"YES" => {
 							delete_element(e_d_element);
 							break;
-						}
-						else {
-							let answer = user_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
-							match answer.as_str() {
-								"YES" => {
-									delete_element(e_d_element);
-									break;
-								},
-								"NO" => {
-									new_list.push(e_d_element);
-									break;
-								},
-								"CONTYES" => {
-									cont_delete = true;
-									delete_element(e_d_element);
-									break;
-								}
-								_ => ()
-							}
-						}
+						},
+						"NO" => {
+							new_list.push(e_d_element);
+							break;
+						},
+						"CONTYES" => cont_delete = true,
+						_ => ()
 					}
 				}
 			}
 		}
+		let deleted_paths_length = old_list_len - new_list.len();
+		if deleted_paths.len() != deleted_paths_length {panic!("Invalid amount of elements deleted.");}
+
 		if !deleted_paths.is_empty() {
-			let length = deleted_paths.len();
-			let length_width = length.to_string().chars().count();
-			user_interface.send_message(&format!("Deleted paths, amount = {}", length));
+			let length_width = deleted_paths_length.to_string().chars().count();
+			user_interface.send_message(&format!("Deleted paths, amount = {}", deleted_paths_length));
 			for (index, deleted_path) in deleted_paths.iter().enumerate() {
-				user_interface.send_message(&format!("{:0width$} of {}: {}", index + 1, length, deleted_path, width=length_width));
+				user_interface.send_message(&format!("{:0width$} of {}: {}", index + 1, deleted_paths_length, deleted_path, width=length_width));
 			}
 		}
 	}
