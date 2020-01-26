@@ -20,4 +20,4 @@ pub const FIN_CHECKSUM_PREFIX:  &str  = "CHECKSUM = ";
 pub const XOR_CHECKSUM_PREFIX:  &str  = "XORCHECKSUM = ";
 
 pub const LIST_VERSION_PREFIX:  &str  = "LISTVERSION = ";
-pub const CURRENT_LIST_VERSION: &str  = "1.0";
+pub const CURRENT_LIST_VERSION: &str  = "1.1";

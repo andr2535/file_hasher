@@ -24,18 +24,20 @@ use crate::core::constants::*;
 
 use chrono::prelude::{DateTime, Local};
 use blake2::{Blake2b, digest::{Input, VariableOutput}};
+use hex::decode_to_slice;
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use crate::interfacer::UserInterface;
 
-enum ListVersion {
-	V1_0_0,
-	PreV1_0_0
+enum ListVersion<'a> {
+	V1_0,
+	V1_1,
+	MissingIdentifier,
+	InvalidVersion(&'a str)
 }
 
 enum LineType {
 	FinChecksum(String),
 	XorChecksum(String),
-	ListVersion(String),
 	EDElement
 }
 
@@ -105,47 +107,44 @@ impl EDList {
 				Err(err) => Err(format!("Error reading line, error message = {}", err))
 			}
 		}).collect();
-		let lines = lines?;
+		let mut lines = lines?.into_iter();
 
-		let (list_version, lines_iter) = if let Some(line) = lines.first() {
-			match EDList::identify_line(line) {
-				LineType::ListVersion(list_version) => {
-					match list_version.as_ref() {
-						"1.0" => {
-							let mut lines_iter = lines.into_iter();
-							lines_iter.next(); // Drops version string since we have already used it.
-							(ListVersion::V1_0_0, lines_iter)
-						},
-						identifier => return Err(format!(
-							"Invalid version identifier \"{}\" \
-							in file_hashes,\nmaybe the file is made by a future version of the program?", identifier))
+		// Handling list version.
+		if let Some(first_line) = lines.next() {
+			match EDList::get_version_from_line(first_line.as_ref()) {
+				ListVersion::V1_1 => (),
+				ListVersion::V1_0 => loop {
+					let answer = user_interface
+						.get_user_answer("List version is 1.0, do you want to update it to version 1.1? yes/no")
+						.to_lowercase();
+					match answer.as_ref() {
+						"yes" => break,
+						"no"  => return Err("File hasher cannot work without updating list version".to_string()),
+						_     => user_interface.send_message("Invalid answer")
 					}
 				},
-				_ => {
+				ListVersion::MissingIdentifier => {
 					user_interface.send_message("file_hashes is missing the list_version identifier");
-					loop {
-						let answer = user_interface.get_user_answer(
-							"If it is of a list version prior to 1.0, it can be updated to the current version\n\
-							Do you want to try updating it? YES/NO:");
-						match answer.as_ref() {
-							"YES" => {
-								break (ListVersion::PreV1_0_0, lines.into_iter());
-							},
-							"NO" => return Err("file_hashes is missing its version identifier".to_string()),
-							other_val => user_interface.send_message(&format!("Invalid value \"{}\" entered", other_val))
-						}
-					}
+					user_interface.send_message("This might mean this file_hashes list is from before V1.0.0\
+					                             \nIf you want to update the list, use V1.0.0 of this program.");
+					return Err("Missing list_version identifier".to_string());
+				},
+				ListVersion::InvalidVersion(version_identifier) => {
+					return Err(format!(
+						"Invalid version identifier \"{}\" \
+						in file_hashes,\nmaybe the file is made by a future version of the program?", version_identifier))
 				}
 			}
-		} else {return Err("Invalid file_hashes file".to_string());};
-		
+		}
+		else {return Err("Invalid file_hashes file".to_string());};
+
 		let mut file_final_checksum: Option<String> = None;
 		let mut file_xor_checksum: Option<[u8;HASH_OUTPUT_LENGTH]> = None;
 		let mut xor_checksum = [0u8;HASH_OUTPUT_LENGTH];
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut e_d_list = EDList::new(banlist);
 
-		for line in lines_iter {
+		for line in lines {
 			match EDList::identify_line(line.as_ref()) {
 				LineType::FinChecksum(string) => {
 					match file_final_checksum {
@@ -157,24 +156,14 @@ impl EDList {
 					match file_xor_checksum {
 						None => {
 							let mut new_xor_checksum = [0u8; HASH_OUTPUT_LENGTH];
-							for (i, chunk) in string.as_bytes().chunks_exact(2).enumerate() {
-								let chunk_str = match String::from_utf8(chunk.to_vec()) {
-									Ok(chunk_str) => chunk_str,
-									Err(_err) => return Err("Error in xor_checksum!".to_string())
-								};
-								match u8::from_str_radix(chunk_str.as_ref(), 16) {
-									Ok(byte) => new_xor_checksum[i] = byte,
-									Err(_err) => return Err("Error in xor_checksum!".to_string())
-								}
+							if let Err(_err) = decode_to_slice(string, &mut new_xor_checksum) {
+								return Err("Invalid XORCHECKSUM in file_hashes".to_string());
 							}
 							file_xor_checksum = Some(new_xor_checksum);
 						},
 						Some(_val) => return Err("More than one xor_checksum in file_hashes!".to_string())
 					}
 				},
-				// ListVersion should never be encountered in this iterator,
-				// since we have already parsed it.
-				LineType::ListVersion(_string) => return Err("list_version string not placed at first line, aborting".to_string()),
 				LineType::EDElement => {
 					let element = match EDElement::from_str(&line) {
 						Ok(element) => element,
@@ -188,7 +177,7 @@ impl EDList {
 		}
 
 		// Unwrapping checksums and list_versions.
-		let mut file_xor_checksum = if let Some(file_xor_checksum) = file_xor_checksum {file_xor_checksum}
+		let file_xor_checksum = if let Some(file_xor_checksum) = file_xor_checksum {file_xor_checksum}
 		else {
 			return Err("No xor_checksum was found in file_hashes\n\
 			            if the file was created by an earlier version of the program,\n\
@@ -198,15 +187,8 @@ impl EDList {
 		hasher.process(&file_xor_checksum);
 		let final_checksum = shared::blake2_to_string(hasher);
 
-		let mut file_final_checksum = if let Some(file_final_checksum) = file_final_checksum {file_final_checksum}
+		let file_final_checksum = if let Some(file_final_checksum) = file_final_checksum {file_final_checksum}
 		else {return Err("file_hashes missing final_checksum!".to_string())};
-
-		match list_version {
-			ListVersion::V1_0_0 => (),
-			ListVersion::PreV1_0_0 =>
-				e_d_list.attempt_list_update(&mut file_xor_checksum, &xor_checksum,
-				                             &mut file_final_checksum, &final_checksum, user_interface)?
-		}
 
 		// Verifying xor_checksum
 		// By using the file_xor_checksum instead of xor_checksum, we can
@@ -233,63 +215,6 @@ impl EDList {
 		EDList{element_list: Vec::new(), banlist, xor_checksum: [0u8; HASH_OUTPUT_LENGTH]}
 	}
 
-	/// Attempts to update the list version from before V1.0
-	/// but not prior to the xor_checksum introduction, to V1.0.
-	/// 
-	/// The function generates the hashes like the program would
-	/// before V1.0, and compares to the checksums in the file.
-	/// If the comparison fails, the function will return an error.
-	fn attempt_list_update(&self, file_xor_checksum: &mut [u8;HASH_OUTPUT_LENGTH],
-	                       xor_checksum: &[u8;HASH_OUTPUT_LENGTH], file_final_checksum: &mut String,
-	                       final_checksum: &str, user_interface: impl UserInterface) -> Result<(), String>
-	{
-		/// This function is used to override the checksums that are
-		/// read from file_hashes.
-		/// 
-		/// It is never inlined, so that it would cause issues if the
-		/// cpu for some reason jumped to these instructions.
-		#[inline(never)]
-		fn override_checksums(user_interface: impl UserInterface, file_final_checksum: &mut String,
-		                      file_xor_checksum: &mut [u8;HASH_OUTPUT_LENGTH], source_final_checksum: &str,
-		                      source_xor_checksum: &[u8;HASH_OUTPUT_LENGTH])
-		{
-			user_interface.send_message("Overriding checksums with updated checksum");
-
-			file_final_checksum.clear();
-			file_final_checksum.push_str(source_final_checksum);
-
-			file_xor_checksum.iter_mut().zip(source_xor_checksum.iter()).for_each(|(tar, src)| *tar = *src);
-		}
-		// Calculate pre LIST_VERSION 1.0 checksums.
-		let mut pre_v_1_0_xor_checksum = [0u8;HASH_OUTPUT_LENGTH];
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
-
-		for element in &self.element_list {
-			let checksum = element.generate_pre_v_1_0_hash();
-			// Xor checksum onto pre_v_1_0_xor_checksum.
-			pre_v_1_0_xor_checksum.iter_mut().zip(checksum.iter()).for_each(|(tar, src)| *tar ^= *src);
-			hasher.process(&checksum);
-		}
-		hasher.process(&pre_v_1_0_xor_checksum);
-		let pre_v_1_0_final_checksum = shared::blake2_to_string(hasher);
-		
-		// Make the user verify, that the the checksums are correct.
-		user_interface.send_message("The following final checksums and xor checksums should be equivalent:");
-		user_interface.send_message(&format!("Verify that the final checksums are equal: \nfile({}) and\n old({})", 
-		                                     file_final_checksum, pre_v_1_0_final_checksum));
-		user_interface.send_message(&format!("Verify that the xor checksums are equal: \nfile({}) and\n old({})",
-		                            shared::hash_to_string(file_xor_checksum), shared::hash_to_string(&pre_v_1_0_xor_checksum)));
-
-		// Programmatically verify that the checksums are correct.
-		if file_final_checksum[..] == pre_v_1_0_final_checksum[..] && file_xor_checksum[..] == pre_v_1_0_xor_checksum[..] {
-			override_checksums(user_interface, file_final_checksum, file_xor_checksum, final_checksum, xor_checksum);
-			Ok(())
-		}
-		else {
-			Err("Invalid checksums in file to be updated.".to_string())
-		}
-	}
-
 	/// Tests every element in the lists integrity against
 	/// the real files and links, they refer to.
 	/// Returns a vector with strings describing all the errors.
@@ -298,12 +223,11 @@ impl EDList {
 	pub fn verify(&self, prefix:Option<&str>, user_interface: &impl UserInterface) -> Vec<String> {
 		match prefix {
 			Some(prefix) => {
-				let prefix_u8 = prefix.as_bytes();
 				let element_list = &self.element_list;
 				let mut elements_with_prefix:Vec<&EDElement> = Vec::with_capacity(element_list.len());
 				for e_d_element in element_list {
-					let path_u8 = e_d_element.get_path().as_bytes();
-					if path_u8.len() >= prefix_u8.len() && &path_u8[0..prefix_u8.len()] == prefix_u8 {
+					let path = e_d_element.get_path();
+					if shared::prefix_split(prefix, path).is_some() {
 						elements_with_prefix.push(e_d_element);
 					}
 				}
@@ -581,11 +505,17 @@ impl EDList {
 		Ok(index_list)
 	}
 
-	/// Compared the cmp_value to the prefix, if cmp_value has
-	/// the bytes in prefix as a prefix, we return true.
-	/// Else we return false.
-	fn prefix_cmp(prefix: &[u8], cmp_value: &[u8]) -> bool {
-		cmp_value.len() >= prefix.len() && prefix == &cmp_value[..prefix.len()]
+	fn get_version_from_line(line: &str) -> ListVersion {
+		if let Some(version) = shared::prefix_split(LIST_VERSION_PREFIX, line) {
+			match version {
+				"1.1" => ListVersion::V1_1,
+				"1.0" => ListVersion::V1_0,
+				identifier => ListVersion::InvalidVersion(identifier)
+			}
+		}
+		else {
+			ListVersion::MissingIdentifier
+		}
 	}
 	/// Identifies a line as either some prefixed value,
 	/// or an EDElement in String form.
@@ -593,20 +523,11 @@ impl EDList {
 	/// Used to determine how the string should be processed.
 	fn identify_line(line: &str) -> LineType {
 		// Figure out whether line is a checksum.
-		let fin_checksum_prefix_u8 = FIN_CHECKSUM_PREFIX.as_bytes();
-		let xor_checksum_prefix_u8 = XOR_CHECKSUM_PREFIX.as_bytes();
-		let version_prefix_u8 = LIST_VERSION_PREFIX.as_bytes();
-
-		let line_u8 = line.as_bytes();
-
-		if EDList::prefix_cmp(fin_checksum_prefix_u8, line_u8) {
-			LineType::FinChecksum(String::from(&line[fin_checksum_prefix_u8.len()..line.len()]))
+		if let Some(checksum) = shared::prefix_split(FIN_CHECKSUM_PREFIX, line) {
+			LineType::FinChecksum(checksum.to_string())
 		}
-		else if EDList::prefix_cmp(xor_checksum_prefix_u8, line_u8) {
-			LineType::XorChecksum(String::from(&line[xor_checksum_prefix_u8.len()..line.len()]))
-		}
-		else if EDList::prefix_cmp(version_prefix_u8, line_u8) {
-			LineType::ListVersion(String::from(&line[version_prefix_u8.len()..line.len()]))
+		else if let Some(checksum) = shared::prefix_split(XOR_CHECKSUM_PREFIX, line) {
+			LineType::XorChecksum(checksum.to_string())
 		}
 		// If line is not identified as any of the prefixed variants, it must be an EDElement.
 		else {LineType::EDElement}
@@ -649,35 +570,28 @@ impl EDList {
 	/// Also used for writing the backups to file.
 	fn write_to_file(&self, file:&mut File, file_name:&str) -> Result<(), String> {
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
-
-		// list_version must be written as the first line.
-		let list_version = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
-		match file.write(list_version.as_bytes()) {
-			Ok(_len) => (),
-			Err(err) => return Err(format!("Error writing list_version to the file {}, err = {}", file_name, err))
-		}
+		let mut element_string = String::new();
 
 		for element in &self.element_list {
-			match file.write_all(format!("{}\n", element.to_string()).as_bytes()) {
-				Ok(_len) => (),
-				Err(err) => return Err(format!("Error writing to the file {}. err = {}", file_name, err))
-			}
+			element_string.push_str(format!("{}\n", element).as_ref());
 			hasher.process(element.get_hash());
 		}
 		hasher.process(&self.xor_checksum);
-		
-		
+
+		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
 		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, shared::hash_to_string(&self.xor_checksum));
-		match file.write(xor_checksum_string.as_bytes()) {
-			Ok(_len) => (),
-			Err(err) => return Err(format!("Error writing xor_checksum to the file {}, err = {}", file_name, err))
+		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
+
+		let final_string = format!("{}{}{}{}", list_version_string, xor_checksum_string, fin_checksum_string, element_string);
+
+		if let Err(err) = file.write_all(final_string.as_bytes()) {
+			return Err(format!("Error writing to the file {}. err = {}", file_name, err));
 		}
 
-		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
-		match file.write(fin_checksum_string.as_bytes()) {
-			Ok(_len) => (),
-			Err(err) => return Err(format!("Error writing checksum to the file {}, err = {}", file_name, err))
+		if let Err(err) = file.flush() {
+			return Err(format!("Error writing to the file {}. err = {}", file_name, err));
 		}
+		
 		Ok(())
 	}
 
@@ -703,15 +617,14 @@ impl EDList {
 			}
 		};
 		
-		let relative_path_u8 = relative_path.as_bytes();
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut elements_found = false;
 		self.element_list.iter()
-		    .filter(|e_d_element| EDList::prefix_cmp(relative_path_u8, e_d_element.get_path().as_bytes()))
+		    .filter(|e_d_element| shared::prefix_split(relative_path.as_ref(), e_d_element.get_path()).is_some())
 		    .for_each(|e_d_element|
 		{
 			elements_found = true;
-			hasher.process(&e_d_element.get_path().as_bytes()[relative_path_u8.len()..]);
+			hasher.process(&e_d_element.get_path().as_bytes()[relative_path.len()..]);
 			hasher.process(&e_d_element.get_modified_time().to_le_bytes());
 			match e_d_element.get_variant() {
 				e_d_element::EDVariantFields::File(file) => hasher.process(&file.file_hash),

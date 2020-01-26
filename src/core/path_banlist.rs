@@ -21,9 +21,9 @@ use crate::interfacer::UserInterface;
 use super::constants;
 use super::shared;
 
-enum LineType {
+enum LineType<'a> {
 	Comment,
-	Checksum(String),
+	Checksum(&'a str),
 	BannedPath
 }
 
@@ -85,9 +85,7 @@ impl PathBanlist {
 				},
 				LineType::Checksum(value) => {
 					match checksum {
-						None => {
-							checksum = Some(value);
-						},
+						None => checksum = Some(value.to_string()),
 						Some(_val) => {
 							return Err("More than one checksum in banlist, remove the redundant ones!".to_string());
 						}
@@ -164,12 +162,8 @@ impl PathBanlist {
 		};
 
 		// Figure out whether line is a checksum.
-		let checksum_prefix_u8 = constants::FIN_CHECKSUM_PREFIX.as_bytes();
-		let line_checksum_u8 = line.as_bytes();
-
-		if line_checksum_u8.len() >= checksum_prefix_u8.len() && 
-		   checksum_prefix_u8 == &line_checksum_u8[..checksum_prefix_u8.len()] {
-			return LineType::Checksum(String::from(&line[checksum_prefix_u8.len()..]));
+		if let Some(checksum) = shared::prefix_split(constants::FIN_CHECKSUM_PREFIX, line) {
+			return LineType::Checksum(checksum);
 		}
 
 		// If line is not identified as a comment or a checksum, it must be a bannedpath.

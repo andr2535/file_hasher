@@ -20,6 +20,18 @@ extern crate blake2;
 use super::constants;
 use self::blake2::{Blake2b, digest::VariableOutput};
 
+/// Determines if line has the given prefix line as a prefix.
+/// If it has the prefix, we return the rest of the line.
+/// Else we return None.
+pub fn prefix_split<'a> (prefix: &str, line: &'a str) -> Option<&'a str> {
+	if line.len() >= prefix.len() && prefix.as_bytes() == &(line.as_bytes())[..prefix.len()] {
+		Some(&line[prefix.len()..])
+	}
+	else {
+		None
+	}
+}
+
 /// Converts a Blake2b object into a string.
 /// The hash is output in capital hexadecimal letters.
 pub fn blake2_to_string(hasher:Blake2b) -> String {

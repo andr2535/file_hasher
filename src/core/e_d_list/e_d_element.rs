@@ -20,6 +20,7 @@ use blake2::{Blake2b, digest::{Input, VariableOutput}};
 
 use crate::core::constants::HASH_OUTPUT_LENGTH;
 use crate::core::shared;
+use hex::decode_to_slice;
 
 /// FileElement is a struct that contains the fields that
 /// a file needs, but a symbolic link does not need.
@@ -291,155 +292,86 @@ impl EDElement {
 		&self.variant_fields
 	}
 
-	/// Used for generating the hash used in versions prior to
-	/// the list version 1.0.
-	/// 
-	/// Will be replaced if a newer list version is made.
-	pub fn generate_pre_v_1_0_hash(&self) -> [u8;HASH_OUTPUT_LENGTH] {
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
-		hasher.process(self.path.as_bytes());
-		hasher.process(self.modified_time.to_string().as_bytes());
-		match &self.variant_fields {
-			EDVariantFields::File(file) => hasher.process(&file.file_hash),
-			EDVariantFields::Link(link) => hasher.process(link.link_target.as_bytes())
-		}
-		let mut element_hash = [0u8; HASH_OUTPUT_LENGTH];
-		hasher.variable_result(&mut element_hash).unwrap();
-		element_hash
-	}
-
 	/// Parses a string into an EDElement struct, if the string
 	/// does not describe a valid EDElement struct, it will return
 	/// a String containing an error message.
 	pub fn from_str(element_string: &str) -> Result<EDElement, String> {
-		#[derive(PartialEq)]
-		enum Phase {
-			BeforeFirstBracket,
-			ReadingPath,
-			ReadingTime,
-			VariantDetect,
-			ReadingLink,
-			ReadingFileHash,
-			BeforeLastBracket,
-			Finished
-		}
-		let mut cur_phase = Phase::BeforeFirstBracket;
-
 		let mut path = String::new();
-		let mut time_string = String::new();
-		let mut variant_string = String::new();
-		let mut file_hash = vec![];
-		let mut link_path = String::new();
+		let mut char_iterator = element_string.chars();
 
-		let mut last_file_hash_char = None;
-		let mut escape_char_set = false;
-
-		for character in element_string.chars() {
-			match cur_phase {
-				Phase::BeforeFirstBracket => {
-					if character != '[' {return Err("Missing start bracket".to_string());}
-					cur_phase = Phase::ReadingPath;
-				},
-				Phase::ReadingPath => {
-					if escape_char_set {
-						escape_char_set = false;
-						path.push(character);
+		// Verifying that the first char is a [ character.
+		match char_iterator.next() {Some('[') => (), _ => return Err("Missing start bracket".to_string())}
+		
+		// Parse the path of the EDElement.
+		loop {
+			match char_iterator.next() {
+				Some('\\')      => {
+					if let Some(escaped_char) = char_iterator.next() {
+						path.push(escaped_char);
 					}
-					else {match character {
-						'\\' => escape_char_set = true,
-						','  => cur_phase = Phase::ReadingTime,
-						 _   => path.push(character)
-					}}
-				},
-				Phase::ReadingTime => {
-					match character {
-						',' => cur_phase = Phase::VariantDetect,
-						 _  => time_string.push(character)
+					else {
+						return Err("Missing escaped char in path".to_string());
 					}
 				},
-				Phase::VariantDetect => {
-					match character {
-						'(' => {
-							match variant_string.as_ref() {
-								"file" => cur_phase = Phase::ReadingFileHash,
-								"link" => cur_phase = Phase::ReadingLink,
-								_ => return Err("Invalid variant_string".to_string())
-							}
-						},
-						_ => variant_string.push(character)
-					}
-				},
-				Phase::ReadingFileHash => {
-					match last_file_hash_char {
-						Some(last_char) => {
-							if character == ')' {return Err("Invalid hash length".to_string());}
-							else {
-								match u8::from_str_radix(&format!("{}{}", last_char, character), 16) {
-									Ok(number) => file_hash.push(number),
-									Err(_err) => return Err("Parse error reading hexadecimal file_hash".to_string())
-								}
-								last_file_hash_char = None;
-							}
-						},
-						None => {
-							if character == ')'{
-								cur_phase = Phase::BeforeLastBracket;
-							}
-							else {
-								last_file_hash_char = Some(character);
-							}
-						}
-					}
-				},
-				Phase::ReadingLink => {
-					if escape_char_set {
-						escape_char_set = false;
-						link_path.push(character);
-					}
-					else {match character {
-						'\\' => escape_char_set = true,
-						')'  => cur_phase = Phase::BeforeLastBracket,
-						 _   => link_path.push(character)
-					}}
-
-				},
-				Phase::BeforeLastBracket => {
-					if character == ']' {cur_phase = Phase::Finished; break;} // Finished generating variables.
-					else {return Err("Last bracket missing from EDElement string!".to_string());}
-				},
-				Phase::Finished => unreachable!("Match on cur_phase with Phase::Finished, should not be possible!")
-			};
-		}
-		if cur_phase != Phase::Finished {
-			return Err("String parsing did not finish".to_string());
+				Some(',')       => break,
+				Some(character) => path.push(character),
+				None            => return Err("Missing end character after file name".to_string())
+			}
 		}
 
-		// Finished fetching data from string, converting to proper types, and
-		// Returning result.
-		let modified_time = match u64::from_str_radix(&time_string, 10) {
-			Ok(value) => value,
-			Err(_err) => return Err("Error parsing modified time".to_string())
-		};
-
-		match variant_string.as_ref() {
-			"file" => {
-				// Create Result with EDElement, that has a FileElement.
-				if file_hash.len() != HASH_OUTPUT_LENGTH {return Err("File hash has an invalid length".to_string())};
-				let mut file_hash_array = [0u8; HASH_OUTPUT_LENGTH];
-				for (place, element) in file_hash_array.iter_mut().zip(file_hash.into_iter()) {
-					*place = element;
+		// Parse modified time of the EDElement.
+		let modified_time = {
+			let mut time_string = String::new();
+			loop {
+				match char_iterator.next() {
+					Some(',')        => break,
+					Some(character)  => time_string.push(character),
+					None             => return Err("Missing ending of modified time string".to_string())
 				}
-				let variant_fields = EDVariantFields::File(FileElement{file_hash: file_hash_array});
-				Ok(EDElement::from_internal(path, modified_time, variant_fields))
+			}
+			match u64::from_str_radix(&time_string, 10) {
+				Ok(value) => value,
+				Err(_err) => return Err("Error parsing modified time".to_string())
+			}
+		};
+		
+		// Parse the variant data of the EDElement.
+		if char_iterator.as_str().len() < 5 {return Err("EDElement was missing information about its variant".to_string());};
+		let variant_fields = match &char_iterator.as_str().as_bytes()[0..5] {
+			b"file(" => {
+				let mut file_hash = [0u8;HASH_OUTPUT_LENGTH];
+				if char_iterator.as_str().len() < 5 + (HASH_OUTPUT_LENGTH * 2) {return Err("File hash is incomplete".to_string());}
+				let result = decode_to_slice(&char_iterator.as_str().as_bytes()[5..5+HASH_OUTPUT_LENGTH * 2], 
+				                             &mut file_hash);
+				if let Err(err) = result {return Err(format!("Error decoding file hash: {}", err));}
+				char_iterator = char_iterator.as_str()[5 + HASH_OUTPUT_LENGTH * 2..].chars();
+
+				match char_iterator.next() {Some(')') => (), _ => return Err("Missing end character after file_hash".to_string())}
+				EDVariantFields::File(FileElement{file_hash})
 			},
-			"link" => {
-				// If variant_string is not file, it must be "link".
-				// Create Result with EDElement, that has a LinkElement.
-				let variant_fields = EDVariantFields::Link(LinkElement{link_target: link_path});
-				Ok(EDElement::from_internal(path, modified_time, variant_fields))
-			},
-			_ => Err("variant_string was invalid".to_string())
+			b"link(" => {
+				char_iterator = char_iterator.as_str()[5..].chars();
+				let mut link_target = String::new();
+				loop {
+					match char_iterator.next() {
+						Some('\\')      => {
+							if let Some(character) = char_iterator.next() {link_target.push(character);}
+							else {return Err("Missing escaped character after '\\'".to_string())}
+						},
+						Some(')')       => break,
+						Some(character) => link_target.push(character),
+						None            => return Err("Missing end of link_target".to_string())
+					}
+				}
+				EDVariantFields::Link(LinkElement{link_target})
+			}
+			_ => return Err("Invalid variant_string".to_string())
+		};
+		match char_iterator.next() {
+			Some(']') => (),
+			_ => return Err("Last bracket missing from EDElement string!".to_string())
 		}
+		Ok(EDElement::from_internal(path, modified_time, variant_fields))
 	}
 }
 
