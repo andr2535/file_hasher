@@ -24,7 +24,8 @@ use crate::core::constants::*;
 
 use chrono::prelude::{DateTime, Local};
 use blake2::{Blake2b, digest::{Input, VariableOutput}};
-use hex::decode_to_slice;
+use rayon::prelude::*;
+use join::try_join;
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use crate::interfacer::UserInterface;
 
@@ -33,12 +34,6 @@ enum ListVersion<'a> {
 	V1_1,
 	MissingIdentifier,
 	InvalidVersion(&'a str)
-}
-
-enum LineType {
-	FinChecksum(String),
-	XorChecksum(String),
-	EDElement
 }
 
 /// EDList is a list of all the files in a subdirectory
@@ -91,7 +86,7 @@ impl EDList {
 							// Even if the program should run successfully after making such a jump, it will
 							// write an invalid xor_checksum to the hash_file, which will create an error the
 							// next time the file is opened.
-							Box::new(EDList::new(banlist))
+							Box::new(EDList::new(banlist, Vec::new(), [0u8; HASH_OUTPUT_LENGTH]))
 						}
 						return Ok(*create_empty_e_d_list(user_interface, banlist));
 					}
@@ -108,111 +103,102 @@ impl EDList {
 			}
 		}).collect();
 		let mut lines = lines?.into_iter();
-
+		
+		let (version_line, xor_checksum_line, fin_checksum_line) = 
+		    if let (Some(version_line), Some(xor_checksum_line), Some(fin_checksum_line)) = 
+		    (lines.next(), lines.next(), lines.next()) {
+			(version_line, xor_checksum_line, fin_checksum_line)
+		} else {return Err("Missing first three lines with metadata about file_hashes".to_string())};
+		
 		// Handling list version.
-		if let Some(first_line) = lines.next() {
-			match EDList::get_version_from_line(first_line.as_ref()) {
-				ListVersion::V1_1 => (),
-				ListVersion::V1_0 => loop {
-					let answer = user_interface
-						.get_user_answer("List version is 1.0, do you want to update it to version 1.1? yes/no")
-						.to_lowercase();
-					match answer.as_ref() {
-						"yes" => break,
-						"no"  => return Err("File hasher cannot work without updating list version".to_string()),
-						_     => user_interface.send_message("Invalid answer")
-					}
-				},
-				ListVersion::MissingIdentifier => {
-					user_interface.send_message("file_hashes is missing the list_version identifier");
-					user_interface.send_message("This might mean this file_hashes list is from before V1.0.0\
-					                             \nIf you want to update the list, use V1.0.0 of this program.");
-					return Err("Missing list_version identifier".to_string());
-				},
-				ListVersion::InvalidVersion(version_identifier) => {
-					return Err(format!(
-						"Invalid version identifier \"{}\" \
-						in file_hashes,\nmaybe the file is made by a future version of the program?", version_identifier))
-				}
+		match EDList::get_version_from_line(version_line.as_ref()) {
+			ListVersion::V1_1 => (),
+			ListVersion::V1_0 => {
+				user_interface.send_message("file_hashes version is 1.0, if you want to update the list,\
+				                             \nyou should use file_hasher V1.0.1");
+				return Err("List version is 1.0, which is unsupported".to_string());
+			},
+			ListVersion::MissingIdentifier => {
+				user_interface.send_message("file_hashes is missing the list_version identifier");
+				user_interface.send_message("This might mean this file_hashes list is from before V1.0.0\
+												\nIf you want to update the list, use V1.0.0 of this program.");
+				return Err("Missing list_version identifier".to_string());
+			},
+			ListVersion::InvalidVersion(version_identifier) => {
+				return Err(format!(
+				    "Invalid version identifier \"{}\" \
+				    in file_hashes,\nmaybe the file is made by a future version of the program?", version_identifier))
 			}
 		}
-		else {return Err("Invalid file_hashes file".to_string());};
+		
+		// Parsing file_xor_checksum
+		let file_xor_checksum = {
+			let xor_checksum_string = if let Some(xor_checksum_string) = 
+			    shared::prefix_split(XOR_CHECKSUM_PREFIX, xor_checksum_line.as_ref()) {
+				xor_checksum_string
+			} else {return Err("Invalid xor_checksum_string at line 2 of file_hashes".to_string());};
 
-		let mut file_final_checksum: Option<String> = None;
-		let mut file_xor_checksum: Option<[u8;HASH_OUTPUT_LENGTH]> = None;
-		let mut xor_checksum = [0u8;HASH_OUTPUT_LENGTH];
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
-		let mut e_d_list = EDList::new(banlist);
-
-		for line in lines {
-			match EDList::identify_line(line.as_ref()) {
-				LineType::FinChecksum(string) => {
-					match file_final_checksum {
-						None => file_final_checksum = Some(string),
-						Some(_val) => return Err("More than one fin_checksum in file_hashes!".to_string())
-					}
-				},
-				LineType::XorChecksum(string) => {
-					match file_xor_checksum {
-						None => {
-							let mut new_xor_checksum = [0u8; HASH_OUTPUT_LENGTH];
-							if let Err(_err) = decode_to_slice(string, &mut new_xor_checksum) {
-								return Err("Invalid XORCHECKSUM in file_hashes".to_string());
-							}
-							file_xor_checksum = Some(new_xor_checksum);
-						},
-						Some(_val) => return Err("More than one xor_checksum in file_hashes!".to_string())
-					}
-				},
-				LineType::EDElement => {
-					let element = match EDElement::from_str(&line) {
-						Ok(element) => element,
-						Err(err) => return Err(format!("Error interpreting EDElement from file_hashes, line = {}, err = {}", line, err))
-					};
-					hasher.process(element.get_hash());
-					xor_checksum.iter_mut().zip(element.get_hash().iter()).for_each(|(dst, src)| *dst ^= src);
-					e_d_list.element_list.push(element);
-				}
+			let mut xor_checksum = [0u8; HASH_OUTPUT_LENGTH];
+			if let Err(err) = hex::decode_to_slice(xor_checksum_string, &mut xor_checksum) {
+				return Err(format!("error decoding xor_checksum to binary,\
+				                    xor_checksum_string = {}, err = {}", xor_checksum_string, err));
 			}
-		}
-
-		// Unwrapping checksums and list_versions.
-		let file_xor_checksum = if let Some(file_xor_checksum) = file_xor_checksum {file_xor_checksum}
-		else {
-			return Err("No xor_checksum was found in file_hashes\n\
-			            if the file was created by an earlier version of the program,\n\
-			            you might be able to update it using the version prior to 1.0.0".to_string());
+			xor_checksum
 		};
 
+		// Parsing file_final_checksum
+		let file_final_checksum = {
+			if let Some(fin_checksum_string) = 
+			    shared::prefix_split(FIN_CHECKSUM_PREFIX, fin_checksum_line.as_ref()) {
+				fin_checksum_string
+			} else {return Err("Invalid fin_checksum_string at line 3 of file_hashes".to_string());}
+		};
+		let mut xor_checksum = [0u8;HASH_OUTPUT_LENGTH];
+		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+
+		// Parsing all EDElements.
+		let lines: Vec<String> = lines.collect();
+		let e_d_elements: Result<Vec<EDElement>, String> = lines.par_iter().enumerate().map(|(i, line)|{
+			let element = match EDElement::from_str(&line) {
+				Ok(element) => element,
+				Err(err) => return Err(format!("Error interpreting EDElement from file_hashes, linecount = {}, err = {}", i + 4, err))
+			};
+			Ok(element)
+		}).collect();
+		let e_d_elements = e_d_elements?;
+
+		// Processing the checksums, so that we can verify the integrity
+		// of the file before returning.
+		e_d_elements.iter().for_each(|element| {
+			hasher.process(element.get_hash());
+			xor_checksum.iter_mut().zip(element.get_hash().iter()).for_each(|(dst, src)| *dst ^= src);
+		});
 		hasher.process(&file_xor_checksum);
 		let final_checksum = shared::blake2_to_string(hasher);
-
-		let file_final_checksum = if let Some(file_final_checksum) = file_final_checksum {file_final_checksum}
-		else {return Err("file_hashes missing final_checksum!".to_string())};
 
 		// Verifying xor_checksum
 		// By using the file_xor_checksum instead of xor_checksum, we can
 		// make sure that any corruption would also trickle into the next
 		// time the list is read.
 		if file_xor_checksum != xor_checksum {return Err("Saved xor_checksum is not valid".to_string());}
-		e_d_list.xor_checksum = file_xor_checksum;
 
 		// Verifying final_checksum.
 		if file_final_checksum != final_checksum {
 			return Err("checksum in file_hashes is not valid!".to_string());
 		}
 
+		let e_d_list = EDList::new(banlist, e_d_elements, file_xor_checksum);
 		match e_d_list.write_backup() {
-			Ok(_ok) => (),
+			Ok(()) => (),
 			Err(err) => return Err(format!("Error writing backup, err = {}", err))
 		}
-		
+
 		Ok(e_d_list)
 	}
 
 	/// Creates a new empty EDList.
-	fn new(banlist: PathBanlist) -> EDList {
-		EDList{element_list: Vec::new(), banlist, xor_checksum: [0u8; HASH_OUTPUT_LENGTH]}
+	fn new(banlist: PathBanlist, element_list: Vec<EDElement>, xor_checksum: [u8; HASH_OUTPUT_LENGTH]) -> EDList {
+		EDList{element_list, banlist, xor_checksum}
 	}
 
 	/// Tests every element in the lists integrity against
@@ -416,7 +402,7 @@ impl EDList {
 	/// struct implementing UserInterface.
 	pub fn find_duplicates(&self, user_interface: &impl UserInterface) {
 		use std::collections::hash_map::Entry;
-		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
+		let mut link_dups:HashMap<(&str, &str), Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		let mut file_dups:HashMap<[u8; HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		for element in &self.element_list {
 			match element.get_variant() {
@@ -429,7 +415,10 @@ impl EDList {
 					}
 				},
 				e_d_element::EDVariantFields::Link(link) => {
-					match link_dups.entry(&link.link_target) {
+					let last_slash = element.get_path().rfind('/').expect(
+					                 "No '/' character found in an EDElements path.\n\
+					                 This is either a bug, or the file_hashes file has been fiddled with");
+					match link_dups.entry((&element.get_path()[..=last_slash], &link.link_target)) {
 						Entry::Occupied(entry) => entry.into_mut().push(element),
 						Entry::Vacant(entry) => {
 							entry.insert(vec!(element));
@@ -440,24 +429,22 @@ impl EDList {
 		}
 
 		let mut collision_blocks = 0;
-		user_interface.send_message("Links with same target path:");
-		for (key, vector) in link_dups {
-			if vector.len() <= 1 {continue;}
+		user_interface.send_message("Links with same target path and origin directory:");
+		link_dups.iter().filter(|(_, v)| v.len() > 1).for_each(|(key, vector)| {
 			collision_blocks += 1;
-			user_interface.send_message(&format!("{:4}links with target path = \"{}\":", "", key));
+			user_interface.send_message(&format!("{:4}links with target path = \"{}\":", "", key.1));
 			for element in vector {
 				user_interface.send_message(&format!("{:8}{}","", element.get_path()));
 			}
-		}
+		});
 		user_interface.send_message("Files with the same checksum:");
-		for (hash, vector) in file_dups {
-			if vector.len() <= 1 {continue;}
+		file_dups.iter().filter(|(_, v)| v.len() > 1).for_each(|(hash, vector)| {
 			collision_blocks += 1;
 			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", shared::hash_to_string(&hash)));
 			for element in vector {
 				user_interface.send_message(&format!("{:8}{}", "", element.get_path()));
 			}
-		}
+		});
 		user_interface.send_message(&format!("{} unique collisions found",collision_blocks));
 	}
 
@@ -516,21 +503,6 @@ impl EDList {
 		else {
 			ListVersion::MissingIdentifier
 		}
-	}
-	/// Identifies a line as either some prefixed value,
-	/// or an EDElement in String form.
-	///
-	/// Used to determine how the string should be processed.
-	fn identify_line(line: &str) -> LineType {
-		// Figure out whether line is a checksum.
-		if let Some(checksum) = shared::prefix_split(FIN_CHECKSUM_PREFIX, line) {
-			LineType::FinChecksum(checksum.to_string())
-		}
-		else if let Some(checksum) = shared::prefix_split(XOR_CHECKSUM_PREFIX, line) {
-			LineType::XorChecksum(checksum.to_string())
-		}
-		// If line is not identified as any of the prefixed variants, it must be an EDElement.
-		else {LineType::EDElement}
 	}
 
 	/// This is the only method that must be used to add elements
@@ -616,15 +588,15 @@ impl EDList {
 				user_interface.send_message("The relative path must end with a forward slash \"/\"");
 			}
 		};
-		
+
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut elements_found = false;
 		self.element_list.iter()
-		    .filter(|e_d_element| shared::prefix_split(relative_path.as_ref(), e_d_element.get_path()).is_some())
-		    .for_each(|e_d_element|
+		    .filter_map(|e_d_element| try_join!(Some(e_d_element), shared::prefix_split(relative_path.as_ref(), e_d_element.get_path())))
+		    .for_each(|(e_d_element, postfix)|
 		{
 			elements_found = true;
-			hasher.process(&e_d_element.get_path().as_bytes()[relative_path.len()..]);
+			hasher.process(postfix.as_bytes());
 			hasher.process(&e_d_element.get_modified_time().to_le_bytes());
 			match e_d_element.get_variant() {
 				e_d_element::EDVariantFields::File(file) => hasher.process(&file.file_hash),
