@@ -19,7 +19,6 @@ use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use blake2::{Blake2b, digest::{Input, VariableOutput}};
 
 use crate::core::constants::HASH_OUTPUT_LENGTH;
-use crate::core::shared;
 use hex::decode_to_slice;
 
 /// FileElement is a struct that contains the fields that
@@ -379,7 +378,7 @@ impl std::fmt::Display for EDElement {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let variant_fields = match &self.variant_fields {
 			EDVariantFields::File(file) => {
-				let file_hash = shared::hash_to_string(&file.file_hash);
+				let file_hash = hex::encode_upper(&file.file_hash);
 				format!("file({})", file_hash)
 			},
 			EDVariantFields::Link(link) => format!("link({})", link.link_target.replace("\\", "\\\\").replace(")", "\\)"))

@@ -96,17 +96,13 @@ impl EDList {
 			}
 		};
 
-		let lines: Result<Vec<String>, String> = BufReader::new(file).lines().map(|x|{
-			match x {
-				Ok(x) => Ok(x),
-				Err(err) => Err(format!("Error reading line, error message = {}", err))
-			}
-		}).collect();
-		let mut lines = lines?.into_iter();
+		let mut lines = BufReader::new(file).lines()
+			.map(|x| x.map_err(|err| format!("Error reading line, error message = {}", err)))
+			.collect::<Result<Vec<_>, _>>()?.into_iter();
 		
 		let (version_line, xor_checksum_line, fin_checksum_line) = 
-		    if let (Some(version_line), Some(xor_checksum_line), Some(fin_checksum_line)) = 
-		    (lines.next(), lines.next(), lines.next()) {
+		    if let Some((version_line, xor_checksum_line, fin_checksum_line)) = 
+		    try_join!(lines.next(), lines.next(), lines.next()) {
 			(version_line, xor_checksum_line, fin_checksum_line)
 		} else {return Err("Missing first three lines with metadata about file_hashes".to_string())};
 		
@@ -133,7 +129,7 @@ impl EDList {
 		
 		// Parsing file_xor_checksum
 		let file_xor_checksum = {
-			let xor_checksum_string = if let Some(xor_checksum_string) = 
+			let xor_checksum_string = if let Some(xor_checksum_string) =
 			    shared::prefix_split(XOR_CHECKSUM_PREFIX, xor_checksum_line.as_ref()) {
 				xor_checksum_string
 			} else {return Err("Invalid xor_checksum_string at line 2 of file_hashes".to_string());};
@@ -157,15 +153,10 @@ impl EDList {
 		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		// Parsing all EDElements.
-		let lines: Vec<String> = lines.collect();
-		let e_d_elements: Result<Vec<EDElement>, String> = lines.par_iter().enumerate().map(|(i, line)|{
-			let element = match EDElement::from_str(&line) {
-				Ok(element) => element,
-				Err(err) => return Err(format!("Error interpreting EDElement from file_hashes, linecount = {}, err = {}", i + 4, err))
-			};
-			Ok(element)
-		}).collect();
-		let e_d_elements = e_d_elements?;
+		let e_d_elements = lines.collect::<Vec<_>>().par_iter().enumerate().map(|(i, line)|
+			EDElement::from_str(&line)
+				.map_err(|err| format!("Error interpreting EDElement from file_hashes, linecount = {}, err = {}", i + 4, err))
+		).collect::<Result<Vec<_>, _>>()?;
 
 		// Processing the checksums, so that we can verify the integrity
 		// of the file before returning.
@@ -273,9 +264,8 @@ impl EDList {
 			else {None};
 
 			if error.is_none() {
-				match e_d_element.test_metadata() {
-					Ok(()) => (),
-					Err(err) => error = Some(err)
+				if let Err(err) = e_d_element.test_metadata() {
+					error = Some(err);
 				}
 			}
 			match error {
@@ -285,17 +275,17 @@ impl EDList {
 						delete_element(e_d_element);
 						break;
 					}
-					let answer = user_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? YES/NO/CONTYES", err));
-					match answer.as_str() {
-						"YES" => {
+					let answer = user_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? yes/no/contyes", err));
+					match answer.to_lowercase().as_str() {
+						"yes" => {
 							delete_element(e_d_element);
 							break;
 						},
-						"NO" => {
+						"no" => {
 							new_list.push(e_d_element);
 							break;
 						},
-						"CONTYES" => cont_delete = true,
+						"contyes" => cont_delete = true,
 						_ => ()
 					}
 				}
@@ -440,7 +430,7 @@ impl EDList {
 		user_interface.send_message("Files with the same checksum:");
 		file_dups.iter().filter(|(_, v)| v.len() > 1).for_each(|(hash, vector)| {
 			collision_blocks += 1;
-			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", shared::hash_to_string(&hash)));
+			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", hex::encode_upper(&hash)));
 			for element in vector {
 				user_interface.send_message(&format!("{:8}{}", "", element.get_path()));
 			}
@@ -476,11 +466,7 @@ impl EDList {
 			// If file_path is in banlist, we should not index it.
 			if self.banlist.is_in_banlist(&file_path) {continue;}
 			if file_type.is_dir() {
-				let sub_list =  match self.index(&file_path) {
-					Ok(list) => list,
-					Err(err) => return Err(err)
-				};
-				for element in sub_list {
+				for element in self.index(&file_path)? {
 					index_list.push(element);
 				}
 			}
@@ -551,7 +537,7 @@ impl EDList {
 		hasher.process(&self.xor_checksum);
 
 		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
-		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, shared::hash_to_string(&self.xor_checksum));
+		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum));
 		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
 
 		let final_string = format!("{}{}{}{}", list_version_string, xor_checksum_string, fin_checksum_string, element_string);
