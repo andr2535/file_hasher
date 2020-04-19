@@ -16,9 +16,10 @@
 */
 
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
-use blake2::{Blake2b, digest::{Input, VariableOutput}};
+use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
 
 use crate::core::constants::HASH_OUTPUT_LENGTH;
+use crate::core::shared;
 use hex::decode_to_slice;
 
 /// FileElement is a struct that contains the fields that
@@ -69,17 +70,15 @@ pub struct EDElement {
 impl EDElement {
 	/// from_internal creates an EDElement from the given arguments
 	/// while also creating the element_hash for the EDElement.
-	fn from_internal(path:String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
-		hasher.process(path.as_bytes());
-		hasher.process(&modified_time.to_le_bytes());
+	fn from_internal(path: String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
+		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		hasher.input(path.as_bytes());
+		hasher.input(&modified_time.to_le_bytes());
 		match &variant_fields {
-			EDVariantFields::File(file) => hasher.process(&file.file_hash),
-			EDVariantFields::Link(link) => hasher.process(link.link_target.as_bytes())
+			EDVariantFields::File(file) => hasher.input(&file.file_hash),
+			EDVariantFields::Link(link) => hasher.input(link.link_target.as_bytes())
 		}
-		let mut element_hash = [0u8; HASH_OUTPUT_LENGTH];
-		hasher.variable_result(&mut element_hash).unwrap();
-
+		let element_hash = shared::blake2_to_hex(hasher).unwrap();
 		EDElement{path, modified_time, variant_fields, element_hash}
 	}
 	/// from_path generates an EDElement from a path.
@@ -93,17 +92,18 @@ impl EDElement {
 	/// Also returns an error if the path is a symbolic link
 	/// and its link_path is not a valid utf-8 string. 
 	/// 
-	/// Panics if the filesystem/OS doesn't support reading
-	/// the link_path of a symbolic link
-	pub fn from_path(path:String) -> Result<EDElement, String> {
+	/// Panics if one of these conditions are true:
+	/// * The filesystem/OS doesn't support reading the link_path of a symbolic link.
+	/// * The filesystem doesn't support reading the modified time of a file.
+	/// * The argument "path" is neither a file nor a symbolic link.
+	pub fn from_path(path: String) -> Result<EDElement, String> {
 		let metadata = match fs::symlink_metadata(&path) {
 			Ok(metadata) => metadata,
 			Err(err) => return Err(format!("Error getting metadata of path \"{}\", error = {}", path, err))
 		};
-
-		if metadata.is_dir() {return Err("The path is a directory!".to_string());}
+		
 		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-
+		
 		if metadata.is_file() {
 			// The path is a file.
 			let file = match File::open(&path) {
@@ -251,15 +251,13 @@ impl EDElement {
 	fn hash_file(mut file:File) -> Result<[u8; HASH_OUTPUT_LENGTH], std::io::Error> {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		loop {
 			let result_size = file.read(&mut buffer)?;
-			hasher.process(&buffer[0..result_size]);
+			hasher.input(&buffer[0..result_size]);
 			if result_size != buffer_size {break;}
 		}
-		let mut output = [0u8; HASH_OUTPUT_LENGTH];
-		hasher.variable_result(&mut output).unwrap();
-		Ok(output)
+		Ok(shared::blake2_to_hex(hasher).unwrap())
 	}
 
 	/// Returns a hash of the entire EDElement.
@@ -290,13 +288,17 @@ impl EDElement {
 	pub fn get_variant(&self) -> &EDVariantFields {
 		&self.variant_fields
 	}
+}
 
+impl std::convert::TryFrom<&str> for EDElement {
+	type Error = String;
+	
 	/// Parses a string into an EDElement struct, if the string
 	/// does not describe a valid EDElement struct, it will return
 	/// a String containing an error message.
-	pub fn from_str(element_string: &str) -> Result<EDElement, String> {
+	fn try_from(value: &str) -> Result<EDElement, String> {
 		let mut path = String::new();
-		let mut char_iterator = element_string.chars();
+		let mut char_iterator = value.chars();
 
 		// Verifying that the first char is a [ character.
 		match char_iterator.next() {Some('[') => (), _ => return Err("Missing start bracket".to_string())}

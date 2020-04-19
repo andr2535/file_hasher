@@ -16,7 +16,7 @@
 */
 
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
-use blake2::{Blake2b, digest::{Input, VariableOutput}};
+use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
 use crate::interfacer::UserInterface;
 use super::constants;
 use super::shared;
@@ -67,7 +67,7 @@ impl PathBanlist {
 		};
 		let buf_reader = BufReader::new(file);
 		
-		let mut hasher = Blake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let mut checksum: Option<String> = Option::None;
 		let mut banned_paths: HashMap<char, CharMapper> = HashMap::new();
 
@@ -79,7 +79,7 @@ impl PathBanlist {
 			
 			match PathBanlist::identify_line(&line) {
 				LineType::BannedPath => {
-					hasher.process(line.as_bytes());
+					hasher.input(line.as_bytes());
 
 					PathBanlist::insert_to_banlist(line.chars(), &mut banned_paths);
 				},
@@ -131,7 +131,7 @@ impl PathBanlist {
 			Err(err) => return Err(format!("Error creating file, Error = {}", err))
 		};
 		
-		let mut hasher = Blake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let def_banned_list = ["./lost+found/", "./.Trash-1000/", "./file_hasher_files/"];
 
 		for string in def_banned_list.iter() {
@@ -139,7 +139,7 @@ impl PathBanlist {
 				Ok(_len) => (),
 				Err(err) => return Err(format!("Error writing line to file, Error = {}", err))
 			}
-			hasher.process(string.as_bytes());
+			hasher.input(string.as_bytes());
 		}
 
 		let write_result = file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes());

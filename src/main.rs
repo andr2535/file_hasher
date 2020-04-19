@@ -22,6 +22,8 @@ use crate::core::interfacer::UserInterface;
 mod term_interfacer;
 use crate::term_interfacer::UserMessenger;
 
+use structopt::StructOpt;
+
 fn handle_error_list(error_list:Vec<String>, prepend_message:&str, no_errors_message:Option<&str>) {
 	if !error_list.is_empty() {
 		let length = error_list.len();
@@ -35,16 +37,13 @@ fn handle_error_list(error_list:Vec<String>, prepend_message:&str, no_errors_mes
 		println!("{}", no_errors_message);
 	}
 }
+
+#[derive(StructOpt)]
+#[structopt(name = "File Hasher", about = "A file hashing program")]
+struct Opts { }
+
 fn main() {
-	for arg in std::env::args() {
-		match arg.as_ref() {
-			"-v" | "--Version" => {
-				println!("file_hasher version: {}", env!("CARGO_PKG_VERSION"));
-				return;
-			},
-			_ => ()
-		}
-	}
+	let _opts = Opts::from_args();
 
 	let banlist = match path_banlist::PathBanlist::open(UserMessenger::new()) {
 		Ok(result) => result,

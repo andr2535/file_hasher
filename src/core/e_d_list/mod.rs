@@ -18,12 +18,13 @@
 pub mod e_d_element;
 
 use self::e_d_element::EDElement;
+use std::convert::TryFrom;
 use super::shared;
 use super::path_banlist::PathBanlist;
 use crate::core::constants::*;
 
 use chrono::prelude::{DateTime, Local};
-use blake2::{Blake2b, digest::{Input, VariableOutput}};
+use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
 use rayon::prelude::*;
 use join::try_join;
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
@@ -150,21 +151,21 @@ impl EDList {
 			} else {return Err("Invalid fin_checksum_string at line 3 of file_hashes".to_string());}
 		};
 		let mut xor_checksum = [0u8;HASH_OUTPUT_LENGTH];
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		// Parsing all EDElements.
 		let e_d_elements = lines.collect::<Vec<_>>().par_iter().enumerate().map(|(i, line)|
-			EDElement::from_str(&line)
-				.map_err(|err| format!("Error interpreting EDElement from file_hashes, linecount = {}, err = {}", i + 4, err))
+			EDElement::try_from(line.as_ref()).map_err(|err| 
+				format!("Error interpreting EDElement from file_hashes, linecount = {}, err = {}", i + 4, err))
 		).collect::<Result<Vec<_>, _>>()?;
 
 		// Processing the checksums, so that we can verify the integrity
 		// of the file before returning.
 		e_d_elements.iter().for_each(|element| {
-			hasher.process(element.get_hash());
+			hasher.input(element.get_hash());
 			xor_checksum.iter_mut().zip(element.get_hash().iter()).for_each(|(dst, src)| *dst ^= src);
 		});
-		hasher.process(&file_xor_checksum);
+		hasher.input(&file_xor_checksum);
 		let final_checksum = shared::blake2_to_string(hasher);
 
 		// Verifying xor_checksum
@@ -320,7 +321,7 @@ impl EDList {
 			existing_paths.insert(element.get_path());
 		}
 
-		let index_strings = match self.index(".") {
+		let index_strings = match self.index(".", user_interface) {
 			Ok(strings) => strings,
 			Err(err) => return Err(format!("Error indexing files, Err = {}", err))
 		};
@@ -350,7 +351,7 @@ impl EDList {
 	/// Sort this EDList according to the paths of the EDElements.
 	pub fn sort(&mut self) {
 		use std::cmp::Ordering;
-		self.element_list.sort_unstable_by(|a:&EDElement,b:&EDElement| {
+		self.element_list.par_sort_unstable_by(|a:&EDElement,b:&EDElement| {
 			let mut split_a = a.get_path().split('/');
 			let mut split_b = b.get_path().split('/');
 
@@ -442,8 +443,10 @@ impl EDList {
 	/// from the given root directory.
 	/// Does not follow symbolic links, but symbolic links are indexed
 	/// as a normal file.
+	/// 
+	/// Does not index if, file is not a regular readable file, or a symbolic link.
 	/// Does not index paths that are in the banlist.
-	fn index(&self, path:&str) -> Result<Vec<String>, String> {
+	fn index(&self, path: &str, interfacer: &impl UserInterface) -> Result<Vec<String>, String> {
 		let entries = match std::fs::read_dir(path) {
 			Ok(dirs) => dirs,
 			Err(err) => return Err(format!("Error getting subdirs from dir {}, error = {}", path, err))
@@ -466,28 +469,30 @@ impl EDList {
 			// If file_path is in banlist, we should not index it.
 			if self.banlist.is_in_banlist(&file_path) {continue;}
 			if file_type.is_dir() {
-				for element in self.index(&file_path)? {
+				for element in self.index(&file_path, interfacer)? {
 					index_list.push(element);
 				}
 			}
-			else {
-				// File is either a normal file, or a symbolic link.
+			else if file_type.is_file() || file_type.is_symlink() {
 				index_list.push(file_path);
+			}
+			else {
+				interfacer.send_message(
+					format!(
+						"The file \"{}\" is neither a readable file, a symbolic link or a directory, \
+						and was skipped during file indexing.", 
+						file_path).as_ref());
 			}
 		}
 		Ok(index_list)
 	}
 
 	fn get_version_from_line(line: &str) -> ListVersion {
-		if let Some(version) = shared::prefix_split(LIST_VERSION_PREFIX, line) {
-			match version {
-				"1.1" => ListVersion::V1_1,
-				"1.0" => ListVersion::V1_0,
-				identifier => ListVersion::InvalidVersion(identifier)
-			}
-		}
-		else {
-			ListVersion::MissingIdentifier
+		match shared::prefix_split(LIST_VERSION_PREFIX, line) {
+			Some("1.1") => ListVersion::V1_1,
+			Some("1.0") => ListVersion::V1_0,
+			Some(identifier) => ListVersion::InvalidVersion(identifier),
+			None => ListVersion::MissingIdentifier
 		}
 	}
 
@@ -527,14 +532,14 @@ impl EDList {
 	/// Used when we need to write hash_file data to a file
 	/// Also used for writing the backups to file.
 	fn write_to_file(&self, file:&mut File, file_name:&str) -> Result<(), String> {
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut element_string = String::new();
 
 		for element in &self.element_list {
 			element_string.push_str(format!("{}\n", element).as_ref());
-			hasher.process(element.get_hash());
+			hasher.input(element.get_hash());
 		}
-		hasher.process(&self.xor_checksum);
+		hasher.input(&self.xor_checksum);
 
 		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
 		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum));
@@ -575,18 +580,18 @@ impl EDList {
 			}
 		};
 
-		let mut hasher = Blake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut elements_found = false;
 		self.element_list.iter()
 		    .filter_map(|e_d_element| try_join!(Some(e_d_element), shared::prefix_split(relative_path.as_ref(), e_d_element.get_path())))
 		    .for_each(|(e_d_element, postfix)|
 		{
 			elements_found = true;
-			hasher.process(postfix.as_bytes());
-			hasher.process(&e_d_element.get_modified_time().to_le_bytes());
+			hasher.input(postfix.as_bytes());
+			hasher.input(&e_d_element.get_modified_time().to_le_bytes());
 			match e_d_element.get_variant() {
-				e_d_element::EDVariantFields::File(file) => hasher.process(&file.file_hash),
-				e_d_element::EDVariantFields::Link(link) => hasher.process(&link.link_target.as_bytes())
+				e_d_element::EDVariantFields::File(file) => hasher.input(&file.file_hash),
+				e_d_element::EDVariantFields::Link(link) => hasher.input(&link.link_target.as_bytes())
 			}
 		});
 		if elements_found {
