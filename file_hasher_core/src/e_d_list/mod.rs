@@ -19,16 +19,14 @@ pub mod e_d_element;
 
 use self::e_d_element::EDElement;
 use std::convert::TryFrom;
-use super::shared;
+use super::{shared, shared::{Checksum, UserInterface, constants::*}};
 use super::path_banlist::PathBanlist;
-use crate::core::constants::*;
 
 use chrono::prelude::{DateTime, Local};
 use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
 use rayon::prelude::*;
 use join::try_join;
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
-use crate::interfacer::UserInterface;
 
 enum ListVersion<'a> {
 	V1_0,
@@ -58,7 +56,7 @@ enum ListVersion<'a> {
 pub struct EDList {
 	element_list: Vec<EDElement>,
 	banlist: PathBanlist,
-	xor_checksum: [u8; HASH_OUTPUT_LENGTH]
+	xor_checksum: Checksum
 }
 impl EDList {
 	/// Attempts to open the ./file_hasher_files/file_hashes file
@@ -87,7 +85,7 @@ impl EDList {
 							// Even if the program should run successfully after making such a jump, it will
 							// write an invalid xor_checksum to the hash_file, which will create an error the
 							// next time the file is opened.
-							Box::new(EDList::new(banlist, Vec::new(), [0u8; HASH_OUTPUT_LENGTH]))
+							Box::new(EDList::new(banlist, Vec::new(), Checksum::default()))
 						}
 						return Ok(*create_empty_e_d_list(user_interface, banlist));
 					}
@@ -135,8 +133,8 @@ impl EDList {
 				xor_checksum_string
 			} else {return Err("Invalid xor_checksum_string at line 2 of file_hashes".to_string());};
 
-			let mut xor_checksum = [0u8; HASH_OUTPUT_LENGTH];
-			if let Err(err) = hex::decode_to_slice(xor_checksum_string, &mut xor_checksum) {
+			let mut xor_checksum = Checksum::default();
+			if let Err(err) = hex::decode_to_slice(xor_checksum_string, &mut *xor_checksum) {
 				return Err(format!("error decoding xor_checksum to binary,\
 				                    xor_checksum_string = {}, err = {}", xor_checksum_string, err));
 			}
@@ -150,7 +148,7 @@ impl EDList {
 				fin_checksum_string
 			} else {return Err("Invalid fin_checksum_string at line 3 of file_hashes".to_string());}
 		};
-		let mut xor_checksum = [0u8;HASH_OUTPUT_LENGTH];
+		let mut xor_checksum = Checksum::default();
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		// Parsing all EDElements.
@@ -162,10 +160,10 @@ impl EDList {
 		// Processing the checksums, so that we can verify the integrity
 		// of the file before returning.
 		e_d_elements.iter().for_each(|element| {
-			hasher.input(element.get_hash());
-			xor_checksum.iter_mut().zip(element.get_hash().iter()).for_each(|(dst, src)| *dst ^= src);
+			hasher.input(element.get_hash().as_ref());
+			xor_checksum ^= element.get_hash();
 		});
-		hasher.input(&file_xor_checksum);
+		hasher.input(file_xor_checksum.as_ref());
 		let final_checksum = shared::blake2_to_string(hasher);
 
 		// Verifying xor_checksum
@@ -189,7 +187,7 @@ impl EDList {
 	}
 
 	/// Creates a new empty EDList.
-	fn new(banlist: PathBanlist, element_list: Vec<EDElement>, xor_checksum: [u8; HASH_OUTPUT_LENGTH]) -> EDList {
+	fn new(banlist: PathBanlist, element_list: Vec<EDElement>, xor_checksum: Checksum) -> EDList {
 		EDList{element_list, banlist, xor_checksum}
 	}
 
@@ -253,7 +251,7 @@ impl EDList {
 		let xor_checksum = &mut self.xor_checksum;
 
 		let mut delete_element = |e_d_element:EDElement| {
-			xor_checksum.iter_mut().zip(e_d_element.get_hash().iter()).for_each(|(dest, hash_part)| *dest ^= *hash_part);
+			*xor_checksum ^= e_d_element.get_hash();
 			deleted_paths.push(e_d_element.take_path());
 		};
 
@@ -394,11 +392,11 @@ impl EDList {
 	pub fn find_duplicates(&self, user_interface: &impl UserInterface) {
 		use std::collections::hash_map::Entry;
 		let mut link_dups:HashMap<(&str, &str), Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
-		let mut file_dups:HashMap<[u8; HASH_OUTPUT_LENGTH], Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
+		let mut file_dups:HashMap<Checksum, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		for element in &self.element_list {
 			match element.get_variant() {
 				e_d_element::EDVariantFields::File(file) => {
-					match file_dups.entry(file.file_hash) {
+					match file_dups.entry(file.file_checksum) {
 						Entry::Occupied(entry) => entry.into_mut().push(element),
 						Entry::Vacant(entry) => {
 							entry.insert(vec!(element));
@@ -431,7 +429,7 @@ impl EDList {
 		user_interface.send_message("Files with the same checksum:");
 		file_dups.iter().filter(|(_, v)| v.len() > 1).for_each(|(hash, vector)| {
 			collision_blocks += 1;
-			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", hex::encode_upper(&hash)));
+			user_interface.send_message(&format!("{:4}Files with checksum = \"{}\":", "", hex::encode_upper(hash.as_ref())));
 			for element in vector {
 				user_interface.send_message(&format!("{:8}{}", "", element.get_path()));
 			}
@@ -500,9 +498,7 @@ impl EDList {
 	/// to the EDList after it is initialized.
 	/// It handles updating the lists internal xor checksum.
 	fn add_e_d_element(&mut self, element:EDElement) {
-		for (dest, hash_part) in self.xor_checksum.iter_mut().zip(element.get_hash().iter()) {
-			*dest ^= *hash_part;
-		}
+		self.xor_checksum ^= element.get_hash();
 		self.element_list.push(element);
 	}
 
@@ -537,12 +533,12 @@ impl EDList {
 
 		for element in &self.element_list {
 			element_string.push_str(format!("{}\n", element).as_ref());
-			hasher.input(element.get_hash());
+			hasher.input(element.get_hash().as_ref());
 		}
-		hasher.input(&self.xor_checksum);
+		hasher.input(&self.xor_checksum.as_ref());
 
 		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
-		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum));
+		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum.as_ref()));
 		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
 
 		let final_string = format!("{}{}{}{}", list_version_string, xor_checksum_string, fin_checksum_string, element_string);
@@ -590,7 +586,7 @@ impl EDList {
 			hasher.input(postfix.as_bytes());
 			hasher.input(&e_d_element.get_modified_time().to_le_bytes());
 			match e_d_element.get_variant() {
-				e_d_element::EDVariantFields::File(file) => hasher.input(&file.file_hash),
+				e_d_element::EDVariantFields::File(file) => hasher.input(&file.file_checksum.as_ref()),
 				e_d_element::EDVariantFields::Link(link) => hasher.input(&link.link_target.as_bytes())
 			}
 		});

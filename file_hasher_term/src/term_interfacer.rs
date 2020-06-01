@@ -15,7 +15,6 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use crate::core::interfacer;
 /// UserMessenger is named Messenger, because it
 /// functions as an intermediary between the user and
 /// the file_hasher modules.
@@ -28,7 +27,8 @@ impl UserMessenger {
 		UserMessenger{stdin}
 	}
 }
-impl interfacer::UserInterface for UserMessenger {
+
+impl file_hasher_core::UserInterface for UserMessenger {
 	fn get_user_answer(&self, message: &str) -> String {
 		println!("{}", message);
 		let mut input_string = String::new();

@@ -25,7 +25,7 @@ dpkg -i debfilename.deb
 #### Install using Cargo
 
 ```
-cargo install --path .
+cargo install --path ./file_hasher_term/
 ```
 
 #### Other OS than Linux

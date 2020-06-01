@@ -1,0 +1,11 @@
+[package]
+name = "file_hasher"
+version = "1.0.5"
+authors = ["Andreas Ejdesgaard <andreasejdesgaard@protonmail.com>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+readme = "README.md"
+
+[dependencies]
+file_hasher_core = { path = "../file_hasher_core/" }
+structopt = "0.3.14"

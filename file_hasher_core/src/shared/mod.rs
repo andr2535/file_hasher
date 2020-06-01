@@ -15,8 +15,10 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+mod checksum;
+mod functions;
+mod interfacer;
 pub mod constants;
-pub mod e_d_list;
-pub mod path_banlist;
-pub mod interfacer;
-mod shared;
+pub use checksum::Checksum;
+pub use functions::*;
+pub use interfacer::UserInterface;

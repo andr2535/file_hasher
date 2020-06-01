@@ -18,15 +18,15 @@
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
 
-use crate::core::constants::HASH_OUTPUT_LENGTH;
-use crate::core::shared;
+use crate::shared::constants::HASH_OUTPUT_LENGTH;
+use crate::{shared, shared::Checksum};
 use hex::decode_to_slice;
 
 /// FileElement is a struct that contains the fields that
 /// a file needs, but a symbolic link does not need.
 #[derive(Debug)]
 pub struct FileElement {
-	pub file_hash: [u8; HASH_OUTPUT_LENGTH]
+	pub file_checksum: Checksum
 }
 
 /// LinkElement is a struct that contains the fields, that
@@ -65,7 +65,7 @@ pub struct EDElement {
 	path: String,
 	modified_time: u64,
 	variant_fields: EDVariantFields,
-	element_hash: [u8; HASH_OUTPUT_LENGTH]
+	element_hash: Checksum
 }
 impl EDElement {
 	/// from_internal creates an EDElement from the given arguments
@@ -75,12 +75,13 @@ impl EDElement {
 		hasher.input(path.as_bytes());
 		hasher.input(&modified_time.to_le_bytes());
 		match &variant_fields {
-			EDVariantFields::File(file) => hasher.input(&file.file_hash),
+			EDVariantFields::File(file) => hasher.input(*file.file_checksum),
 			EDVariantFields::Link(link) => hasher.input(link.link_target.as_bytes())
 		}
-		let element_hash = shared::blake2_to_hex(hasher).unwrap();
+		let element_hash = shared::blake2_to_checksum(hasher).unwrap();
 		EDElement{path, modified_time, variant_fields, element_hash}
 	}
+	
 	/// from_path generates an EDElement from a path.
 	/// It detects automatically whether the path
 	/// refers to a link or a file.
@@ -114,12 +115,12 @@ impl EDElement {
 				Ok(hash) => hash,
 				Err(err) => return Err(format!("Error reading file {}, error = {}", path, err))
 			};
-			let file_fields = EDVariantFields::File(FileElement{file_hash: hash});
+			let file_fields = EDVariantFields::File(FileElement{file_checksum: hash});
 			Ok(EDElement::from_internal(path, modified_time, file_fields))
 		}
 		else {
 			// The path is a symbolic link
-			match fs::read_link(&path).unwrap().to_str(){
+			match fs::read_link(&path).unwrap().to_str() {
 				Some(link_path) =>  {
 					// Verify that the link path exists.
 					EDElement::verify_link_path(&path, &link_path)?;
@@ -173,7 +174,7 @@ impl EDElement {
 			Ok(metadata) => metadata,
 			Err(err) => return Err(format!("Error reading metadata from file {}, err = {}", self.path, err))
 		};
-		if metadata.is_dir() {return Err(format!("Path {} is a directory, directories cannot be a EDEelement!", self.path));}
+		if metadata.is_dir() {return Err(format!("Path {} is a directory, directories cannot be a EDElement!", self.path));}
 		
 		let time_changed = {
 			let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
@@ -190,7 +191,7 @@ impl EDElement {
 					Ok(file_hash) => file_hash,
 					Err(err) => return Err(format!("Error trying to read file {}, err = {}", self.path, err))
 				};
-				if file_hash == file_element.file_hash {
+				if file_hash == file_element.file_checksum {
 					if time_changed {
 						Err(format!("File \"{}\" has a valid checksum, but the time has been changed", self.path))
 					}
@@ -248,7 +249,7 @@ impl EDElement {
 	/// u8 vector, of length HASH_OUTPUT_LENGTH.
 	/// If there is trouble reading the file, we will return
 	/// the error given.
-	fn hash_file(mut file:File) -> Result<[u8; HASH_OUTPUT_LENGTH], std::io::Error> {
+	fn hash_file(mut file:File) -> Result<Checksum, std::io::Error> {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
@@ -257,7 +258,7 @@ impl EDElement {
 			hasher.input(&buffer[0..result_size]);
 			if result_size != buffer_size {break;}
 		}
-		Ok(shared::blake2_to_hex(hasher).unwrap())
+		Ok(shared::blake2_to_checksum(hasher).unwrap())
 	}
 
 	/// Returns a hash of the entire EDElement.
@@ -265,7 +266,7 @@ impl EDElement {
 	/// represents the entire EDElement.
 	/// So if anything changes inside the EDElement,
 	/// this hash would be invalid.
-	pub fn get_hash(&self) -> &[u8; HASH_OUTPUT_LENGTH] {
+	pub fn get_hash(&self) -> &Checksum {
 		&self.element_hash
 	}
 
@@ -340,15 +341,14 @@ impl std::convert::TryFrom<&str> for EDElement {
 		if char_iterator.as_str().len() < 5 {return Err("EDElement was missing information about its variant".to_string());};
 		let variant_fields = match &char_iterator.as_str().as_bytes()[0..5] {
 			b"file(" => {
-				let mut file_hash = [0u8;HASH_OUTPUT_LENGTH];
+				let mut file_checksum = Checksum::default();
 				if char_iterator.as_str().len() < 5 + (HASH_OUTPUT_LENGTH * 2) {return Err("File hash is incomplete".to_string());}
-				let result = decode_to_slice(&char_iterator.as_str().as_bytes()[5..5+HASH_OUTPUT_LENGTH * 2], 
-				                             &mut file_hash);
+				let result = decode_to_slice(&char_iterator.as_str().as_bytes()[5..5+HASH_OUTPUT_LENGTH * 2], &mut *file_checksum);
 				if let Err(err) = result {return Err(format!("Error decoding file hash: {}", err));}
 				char_iterator = char_iterator.as_str()[5 + HASH_OUTPUT_LENGTH * 2..].chars();
 
 				match char_iterator.next() {Some(')') => (), _ => return Err("Missing end character after file_hash".to_string())}
-				EDVariantFields::File(FileElement{file_hash})
+				EDVariantFields::File(FileElement{file_checksum})
 			},
 			b"link(" => {
 				char_iterator = char_iterator.as_str()[5..].chars();
@@ -379,13 +379,10 @@ impl std::convert::TryFrom<&str> for EDElement {
 impl std::fmt::Display for EDElement {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let variant_fields = match &self.variant_fields {
-			EDVariantFields::File(file) => {
-				let file_hash = hex::encode_upper(&file.file_hash);
-				format!("file({})", file_hash)
-			},
-			EDVariantFields::Link(link) => format!("link({})", link.link_target.replace("\\", "\\\\").replace(")", "\\)"))
+			EDVariantFields::File(file) => format!("file({})", hex::encode_upper(*file.file_checksum)),
+			EDVariantFields::Link(link) => format!("link({})", link.link_target.replace(r"\", r"\\").replace(")", r"\)"))
 		};
-		write!(f, "[{},{},{}]", self.path.replace("\\", "\\\\").replace(",", "\\,"), self.modified_time, variant_fields)
+		write!(f, "[{},{},{}]", self.path.replace(r"\", r"\\").replace(",", r"\,"), self.modified_time, variant_fields)
 	}
 }
 

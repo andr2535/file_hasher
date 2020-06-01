@@ -19,6 +19,7 @@ extern crate blake2;
 
 use super::constants::HASH_OUTPUT_LENGTH;
 use self::blake2::{VarBlake2b, digest::VariableOutput};
+use super::Checksum;
 
 /// Determines if line has the given prefix line as a prefix.
 /// If it has the prefix, we return the rest of the line.
@@ -32,17 +33,18 @@ pub fn prefix_split<'a> (prefix: &str, line: &'a str) -> Option<&'a str> {
 	}
 }
 
-/// Converts a VarBlake2b object into a HASH_OUTPUT_LENGTH 
+/// Converts a VarBlake2b object into an Option of a HASH_OUTPUT_LENGTH 
 /// length binary array.
 /// 
-/// Panics if "hasher" is not initialized with a lenght of HASH_OUTPUT_LENGTH
-pub fn blake2_to_hex(hasher: VarBlake2b) -> Option<[u8; HASH_OUTPUT_LENGTH]> {
+/// Returns None if given "hasher" is not initialized with a length
+/// of HASH_OUTPUT_LENGTH.
+pub fn blake2_to_checksum(hasher: VarBlake2b) -> Option<Checksum> {
 	let mut element_hash = None;
 	hasher.variable_result(|res| {
 		if res.len() == HASH_OUTPUT_LENGTH {
-			element_hash = Some([0u8; HASH_OUTPUT_LENGTH]).map(|mut array| {
-				array.iter_mut().zip(res).for_each(|(dest, src)| *dest = *src);
-				array
+			element_hash = Some(Checksum::default()).map(|mut checksum| {
+				checksum.iter_mut().zip(res).for_each(|(dest, src)| *dest = *src);
+				checksum
 			});
 		}
 	});
@@ -52,8 +54,8 @@ pub fn blake2_to_hex(hasher: VarBlake2b) -> Option<[u8; HASH_OUTPUT_LENGTH]> {
 /// Converts a Blake2b object into a string.
 /// The hash is output in capital hexadecimal letters.
 /// 
-/// Panics if "hasher" is not initialized with a lenght of HASH_OUTPUT_LENGTH
+/// Panics if "hasher" is not initialized with a length of HASH_OUTPUT_LENGTH
 pub fn blake2_to_string(hasher: VarBlake2b) -> String {
-	let hash = blake2_to_hex(hasher).unwrap();
-	hex::encode_upper(&hash)
+	let hash = blake2_to_checksum(hasher).unwrap();
+	hex::encode_upper(hash.as_ref())
 }

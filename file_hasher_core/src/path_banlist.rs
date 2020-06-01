@@ -17,9 +17,7 @@
 
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
 use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
-use crate::interfacer::UserInterface;
-use super::constants;
-use super::shared;
+use crate::{shared, shared::UserInterface, shared::constants};
 
 enum LineType<'a> {
 	Comment,

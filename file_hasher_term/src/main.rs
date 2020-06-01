@@ -15,9 +15,7 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-mod core;
-use crate::core::*;
-use crate::core::interfacer::UserInterface;
+use file_hasher_core::*;
 
 mod term_interfacer;
 use crate::term_interfacer::UserMessenger;
@@ -96,7 +94,7 @@ fn main() {
 	}
 
 	match edlist.write_hash_file() {
-		Ok(_ok) => (),
+		Ok(()) => (),
 		Err(err) => println!("Error writing EDList to file, {}", err)
 	}
 }
