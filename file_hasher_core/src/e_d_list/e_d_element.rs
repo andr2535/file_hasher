@@ -22,6 +22,9 @@ use crate::shared::constants::HASH_OUTPUT_LENGTH;
 use crate::{shared, shared::Checksum};
 use hex::decode_to_slice;
 
+pub mod errors;
+use errors::*;
+
 /// FileElement is a struct that contains the fields that
 /// a file needs, but a symbolic link does not need.
 #[derive(Debug)]
@@ -91,43 +94,34 @@ impl EDElement {
 	/// not complete correctly.
 	/// 
 	/// Also returns an error if the path is a symbolic link
-	/// and its link_path is not a valid utf-8 string. 
+	/// and its link_path is not a valid utf-8 string.
 	/// 
 	/// Panics if one of these conditions are true:
 	/// * The filesystem/OS doesn't support reading the link_path of a symbolic link.
 	/// * The filesystem doesn't support reading the modified time of a file.
 	/// * The argument "path" is neither a file nor a symbolic link.
-	pub fn from_path(path: String) -> Result<EDElement, String> {
-		let metadata = match fs::symlink_metadata(&path) {
-			Ok(metadata) => metadata,
-			Err(err) => return Err(format!("Error getting metadata of path \"{}\", error = {}", path, err))
-		};
-		
+	pub fn from_path(path: String) -> Result<EDElement, EDElementError> {
+		let metadata = fs::symlink_metadata(&path)
+			.map_err(|err| EDElementError::GetMetaDataError(path.to_string(), err))?;
 		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 		
 		if metadata.is_file() {
 			// The path is a file.
-			let file = match File::open(&path) {
-				Ok(file) => file,
-				Err(err) => return Err(format!("Error opening path \"{}\", error = {}", path, err))
-			};
-			let hash = match EDElement::hash_file(file) {
-				Ok(hash) => hash,
-				Err(err) => return Err(format!("Error reading file {}, error = {}", path, err))
-			};
+			let file = File::open(&path).map_err(|err| EDElementError::OpenFileError(path.to_string(), err))?;
+			let hash = EDElement::hash_file(file).map_err(|err| EDElementError::FileHashingError(path.to_string(), err))?;
 			let file_fields = EDVariantFields::File(FileElement{file_checksum: hash});
 			Ok(EDElement::from_internal(path, modified_time, file_fields))
 		}
 		else {
 			// The path is a symbolic link
 			match fs::read_link(&path).unwrap().to_str() {
-				Some(link_path) =>  {
+				Some(link_path) => {
 					// Verify that the link path exists.
 					EDElement::verify_link_path(&path, &link_path)?;
 					let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path.to_string()});
 					Ok(EDElement::from_internal(path, modified_time, link_fields))
 				},
-				None => Err(format!("link_path is not a valid utf-8 string!, path to link = {}", path))
+				None => Err(EDElementError::InvalidUtf8Link(path))?
 			}
 		}
 	}
@@ -140,15 +134,14 @@ impl EDElement {
 	/// Panics if the filesystem/OS doesn't support reading
 	/// the last modified time of a file, or interpreting
 	/// it as time since epoch
-	pub fn test_metadata(&self) -> Result<(), String> {
-		let metadata = match fs::symlink_metadata(&self.path) {
-			Ok(metadata) => metadata,
-			Err(_err) => return Err(format!("Could not open path \"{}\"", self.path))
-		};
-		if metadata.is_dir() {return Err(format!("Path \"{}\" is a directory", self.path))}
+	pub fn test_metadata(&self) -> Result<(), EDElementError> {
+		let metadata = fs::symlink_metadata(&self.path)
+			.map_err(|err|EDElementError::GetMetaDataError(self.path.to_owned(), err))?;
+		
+		if metadata.is_dir() {Err(EDElementVerifyError::PathIsDirectory(self.path.to_owned()))?}
 		let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 		if modified_time != self.modified_time {
-			Err(format!("File with path \"{}\", has a different modified time than expected", self.path))
+			Err(EDElementVerifyError::TimeChanged(self.path.to_owned()))?
 		}
 		else {Ok(())}
 	}
@@ -169,12 +162,8 @@ impl EDElement {
 	/// 
 	/// The filesystem/OS doesn't support reading
 	/// the link_path of a symbolic link
-	pub fn test_integrity(&self) -> Result<(), String> {
-		let metadata = match fs::symlink_metadata(&self.path) {
-			Ok(metadata) => metadata,
-			Err(err) => return Err(format!("Error reading metadata from file {}, err = {}", self.path, err))
-		};
-		if metadata.is_dir() {return Err(format!("Path {} is a directory, directories cannot be a EDElement!", self.path));}
+	pub fn test_integrity(&self) -> Result<(), EDElementError> {
+		let metadata = fs::symlink_metadata(&self.path).map_err(|err| EDElementError::GetMetaDataError(self.path.to_owned(), err))?;
 		
 		let time_changed = {
 			let modified_time = metadata.modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
@@ -183,73 +172,69 @@ impl EDElement {
 		
 		match &self.variant_fields {
 			EDVariantFields::File(file_element) => {
-				let file = match File::open(&self.path) {
-					Ok(file) => file,
-					Err(err) => return Err(format!("Error opening file {} for testing, err = {}", self.path, err))
-				};
-				let file_hash = match EDElement::hash_file(file) {
-					Ok(file_hash) => file_hash,
-					Err(err) => return Err(format!("Error trying to read file {}, err = {}", self.path, err))
-				};
+				let file = File::open(&self.path).map_err(|err| EDElementError::OpenFileError(self.path.to_owned(), err))?;
+				let file_hash = EDElement::hash_file(file)
+					.map_err(|err| EDElementError::FileHashingError(self.path.to_owned(), err))?;
 				if file_hash == file_element.file_checksum {
 					if time_changed {
-						Err(format!("File \"{}\" has a valid checksum, but the time has been changed", self.path))
+						Err(EDElementVerifyError::TimeChangedButFileCorrectError(self.path.to_owned()))?
 					}
 					else {
 						Ok(())
 					}
 				}
 				else if time_changed {
-					Err(format!("File \"{}\" has an invalid checksum, and it's time has been changed", self.path))
+					Err(EDElementVerifyError::TimeChangedAndFileChanged(self.path.to_owned()))?
 				}
 				else {
-					Err(format!("File \"{}\" has an invalid checksum", self.path))
+					Err(EDElementVerifyError::InvalidChecksum(self.path.to_owned()))?
 				}
 			},
 			EDVariantFields::Link(link_element) => {
 				let link_target = match fs::read_link(&self.path).unwrap().to_str() {
 					Some(link_target) => link_target.to_string(),
-					None => return Err(format!("link_target is not a valid utf-8 string!, path to link = {}", self.path))
+					None => Err(EDElementError::LinkTargetInvalidUtf8(self.path.to_owned()))?
 				};
 				if link_target == link_element.link_target {
 					if time_changed {
-						Err(format!("Time changed on link \"{}\", but link has valid target path", self.path))
+						Err(EDElementVerifyError::LinkTargetValidTimeChanged(self.path.to_owned()))?
 					}
 					else {
 						// Verify that the link target exists.
-						EDElement::verify_link_path(&self.path, &link_target)
+						EDElement::verify_link_path(&self.path, &link_target)?;
+						Ok(())
 					}
 				}
 				else if time_changed {
-					Err(format!("Link \"{}\", has an invalid target path, and it's modified time has changed", self.path))
+					Err(EDElementVerifyError::LinkTargetInvalidTimeChanged(self.path.to_owned()))?
 				}
 				else {
-					Err(format!("Link \"{}\", has an invalid target path", self.path))
+					Err(EDElementVerifyError::LinkTargetInvalid(self.path.to_owned()))?
 				}
 			}
 		}
 	}
 	
-	fn verify_link_path(path: &str, link_target: &str) -> Result<(), String> {
+	fn verify_link_path(path: &str, link_target: &str) -> Result<(), VerifyLinkPathError> {
 		use std::path::Path;
 		let current_path = {
 			match Path::new(path).parent() {
 				Some(path) => path,
-				None => return Err(format!("Link with path '{}', has link_target: '{}', which doesn't have a parent!", path, link_target))
+				None => return Err(VerifyLinkPathError::LinkFileNoParentError(path.to_owned(), link_target.to_owned()))
 			}
 		};
 		let real_link_target = current_path.join(link_target);
 		match File::open(&real_link_target) {
 			// If case Ok, we have verified that the link is valid.
 			Ok(_linked_to_file) => Ok(()),
-			Err(err) => Err(format!("Error opening file linked to by: '{}', link_target: '{}', error: '{}'", path, link_target, err))
+			Err(err) => Err(VerifyLinkPathError::UnableToOpenLinkTarget(path.to_owned(), link_target.to_owned(), err))
 		}
 	}
 	/// hash_file reads a file, and creates a hash for it in an
 	/// u8 vector, of length HASH_OUTPUT_LENGTH.
 	/// If there is trouble reading the file, we will return
 	/// the error given.
-	fn hash_file(mut file:File) -> Result<Checksum, std::io::Error> {
+	fn hash_file(mut file: File) -> Result<Checksum, FileHashingError> {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
@@ -292,17 +277,17 @@ impl EDElement {
 }
 
 impl std::convert::TryFrom<&str> for EDElement {
-	type Error = String;
+	type Error = EDElementParseError;
 	
 	/// Parses a string into an EDElement struct, if the string
 	/// does not describe a valid EDElement struct, it will return
 	/// a String containing an error message.
-	fn try_from(value: &str) -> Result<EDElement, String> {
+	fn try_from(value: &str) -> Result<EDElement, EDElementParseError> {
 		let mut path = String::new();
 		let mut char_iterator = value.chars();
 
 		// Verifying that the first char is a [ character.
-		match char_iterator.next() {Some('[') => (), _ => return Err("Missing start bracket".to_string())}
+		match char_iterator.next() {Some('[') => (), _ => return Err(EDElementParseError::NoStartBracket)}
 		
 		// Parse the path of the EDElement.
 		loop {
@@ -312,12 +297,12 @@ impl std::convert::TryFrom<&str> for EDElement {
 						path.push(escaped_char);
 					}
 					else {
-						return Err("Missing escaped char in path".to_string());
+						return Err(EDElementParseError::EscapedCharacterMissing);
 					}
 				},
 				Some(',')       => break,
 				Some(character) => path.push(character),
-				None            => return Err("Missing end character after file name".to_string())
+				None            => return Err(EDElementParseError::NoFilePathTerminator)
 			}
 		}
 
@@ -328,26 +313,22 @@ impl std::convert::TryFrom<&str> for EDElement {
 				match char_iterator.next() {
 					Some(',')        => break,
 					Some(character)  => time_string.push(character),
-					None             => return Err("Missing ending of modified time string".to_string())
+					None             => return Err(EDElementParseError::NoModifiedTimeTerminator)
 				}
 			}
-			match u64::from_str_radix(&time_string, 10) {
-				Ok(value) => value,
-				Err(_err) => return Err("Error parsing modified time".to_string())
-			}
+			u64::from_str_radix(&time_string, 10)?
 		};
 		
 		// Parse the variant data of the EDElement.
-		if char_iterator.as_str().len() < 5 {return Err("EDElement was missing information about its variant".to_string());};
+		if char_iterator.as_str().len() < 5 {return Err(EDElementParseError::NoVariantInformation);};
 		let variant_fields = match &char_iterator.as_str().as_bytes()[0..5] {
 			b"file(" => {
 				let mut file_checksum = Checksum::default();
-				if char_iterator.as_str().len() < 5 + (HASH_OUTPUT_LENGTH * 2) {return Err("File hash is incomplete".to_string());}
-				let result = decode_to_slice(&char_iterator.as_str().as_bytes()[5..5+HASH_OUTPUT_LENGTH * 2], &mut *file_checksum);
-				if let Err(err) = result {return Err(format!("Error decoding file hash: {}", err));}
+				if char_iterator.as_str().len() < 5 + (HASH_OUTPUT_LENGTH * 2) {return Err(EDElementParseError::IncompleteFileHash);}
+				decode_to_slice(&char_iterator.as_str().as_bytes()[5..5+HASH_OUTPUT_LENGTH * 2], &mut *file_checksum)?;
 				char_iterator = char_iterator.as_str()[5 + HASH_OUTPUT_LENGTH * 2..].chars();
 
-				match char_iterator.next() {Some(')') => (), _ => return Err("Missing end character after file_hash".to_string())}
+				match char_iterator.next() {Some(')') => (), _ => return Err(EDElementParseError::NoVariantTerminator)}
 				EDVariantFields::File(FileElement{file_checksum})
 			},
 			b"link(" => {
@@ -357,20 +338,20 @@ impl std::convert::TryFrom<&str> for EDElement {
 					match char_iterator.next() {
 						Some('\\')      => {
 							if let Some(character) = char_iterator.next() {link_target.push(character);}
-							else {return Err("Missing escaped character after '\\'".to_string())}
+							else {return Err(EDElementParseError::EscapedCharacterMissing)}
 						},
 						Some(')')       => break,
 						Some(character) => link_target.push(character),
-						None            => return Err("Missing end of link_target".to_string())
+						None            => return Err(EDElementParseError::NoVariantTerminator)
 					}
 				}
 				EDVariantFields::Link(LinkElement{link_target})
 			}
-			_ => return Err("Invalid variant_string".to_string())
+			_ => return Err(EDElementParseError::InvalidVariantIdentifier)
 		};
 		match char_iterator.next() {
 			Some(']') => (),
-			_ => return Err("Last bracket missing from EDElement string!".to_string())
+			_ => return Err(EDElementParseError::NoTerminatorBracket)
 		}
 		Ok(EDElement::from_internal(path, modified_time, variant_fields))
 	}

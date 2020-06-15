@@ -25,7 +25,7 @@ use super::Checksum;
 /// If it has the prefix, we return the rest of the line.
 /// Else we return None.
 pub fn prefix_split<'a> (prefix: &str, line: &'a str) -> Option<&'a str> {
-	if line.len() >= prefix.len() && prefix.as_bytes() == &(line.as_bytes())[..prefix.len()] {
+	if line.starts_with(prefix) {
 		Some(&line[prefix.len()..])
 	}
 	else {

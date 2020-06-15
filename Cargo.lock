@@ -156,7 +156,7 @@ checksum = "bb1f6b1ce1c140482ea30ddd3335fc0024ac7ee112895426e0a629a6c20adfe3"
 
 [[package]]
 name = "file_hasher"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "file_hasher_core",
  "structopt",
@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "file_hasher_core"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "blake2",
  "chrono",

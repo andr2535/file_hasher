@@ -15,8 +15,11 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+
+pub mod errors;
 pub mod e_d_element;
 
+use errors::*;
 use self::e_d_element::EDElement;
 use std::convert::TryFrom;
 use super::{shared, shared::{Checksum, UserInterface, constants::*}};
@@ -68,7 +71,7 @@ impl EDList {
 	/// 
 	/// Also writes a backup of the file_hashes file,
 	/// to the file_hash_backups folder, when file_hashes has been read.
-	pub fn open(user_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, String> {
+	pub fn open(user_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, EDListOpenError> {
 		let file = match File::open("./file_hasher_files/file_hashes") {
 			Ok(file) => file,
 			Err(err) => {
@@ -91,39 +94,25 @@ impl EDList {
 					}
 					else if answer == "NO" {break;}
 				}
-				return Err("Failed to open file_hashes".to_string());
+				return Err(EDListOpenError::CouldNotOpenFileHashesFile);
 			}
 		};
 
-		let mut lines = BufReader::new(file).lines()
-			.map(|x| x.map_err(|err| format!("Error reading line, error message = {}", err)))
-			.collect::<Result<Vec<_>, _>>()?.into_iter();
+		let mut lines = BufReader::new(file).lines().collect::<Result<Vec<_>, _>>()?.into_iter();
 		
 		let (version_line, xor_checksum_line, fin_checksum_line) = 
 		    if let Some((version_line, xor_checksum_line, fin_checksum_line)) = 
 		    try_join!(lines.next(), lines.next(), lines.next()) {
 			(version_line, xor_checksum_line, fin_checksum_line)
-		} else {return Err("Missing first three lines with metadata about file_hashes".to_string())};
+		} else {return Err(EDListOpenError::ChecksumsMissingError)};
 		
 		// Handling list version.
 		match EDList::get_version_from_line(version_line.as_ref()) {
 			ListVersion::V1_1 => (),
-			ListVersion::V1_0 => {
-				user_interface.send_message("file_hashes version is 1.0, if you want to update the list,\
-				                             \nyou should use file_hasher V1.0.1");
-				return Err("List version is 1.0, which is unsupported".to_string());
-			},
-			ListVersion::MissingIdentifier => {
-				user_interface.send_message("file_hashes is missing the list_version identifier");
-				user_interface.send_message("This might mean this file_hashes list is from before V1.0.0\
-												\nIf you want to update the list, use V1.0.0 of this program.");
-				return Err("Missing list_version identifier".to_string());
-			},
-			ListVersion::InvalidVersion(version_identifier) => {
-				return Err(format!(
-				    "Invalid version identifier \"{}\" \
-				    in file_hashes,\nmaybe the file is made by a future version of the program?", version_identifier))
-			}
+			ListVersion::V1_0 => Err(UnsupportedEDListVersion::V1_0)?,
+			ListVersion::MissingIdentifier => Err(UnsupportedEDListVersion::MissingIdentifier)?,
+			ListVersion::InvalidVersion(version_identifier) => 
+				Err(UnsupportedEDListVersion::Invalid(version_identifier.to_owned()))?
 		}
 		
 		// Parsing file_xor_checksum
@@ -131,13 +120,10 @@ impl EDList {
 			let xor_checksum_string = if let Some(xor_checksum_string) =
 			    shared::prefix_split(XOR_CHECKSUM_PREFIX, xor_checksum_line.as_ref()) {
 				xor_checksum_string
-			} else {return Err("Invalid xor_checksum_string at line 2 of file_hashes".to_string());};
+			} else {Err(EDListOpenError::InvalidXorChecksum)?};
 
 			let mut xor_checksum = Checksum::default();
-			if let Err(err) = hex::decode_to_slice(xor_checksum_string, &mut *xor_checksum) {
-				return Err(format!("error decoding xor_checksum to binary,\
-				                    xor_checksum_string = {}, err = {}", xor_checksum_string, err));
-			}
+			hex::decode_to_slice(xor_checksum_string, &mut *xor_checksum)?;
 			xor_checksum
 		};
 
@@ -146,16 +132,15 @@ impl EDList {
 			if let Some(fin_checksum_string) = 
 			    shared::prefix_split(FIN_CHECKSUM_PREFIX, fin_checksum_line.as_ref()) {
 				fin_checksum_string
-			} else {return Err("Invalid fin_checksum_string at line 3 of file_hashes".to_string());}
+			} else {Err(EDListOpenError::InvalidFinChecksum)?}
 		};
 		let mut xor_checksum = Checksum::default();
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		// Parsing all EDElements.
-		let e_d_elements = lines.collect::<Vec<_>>().par_iter().enumerate().map(|(i, line)|
-			EDElement::try_from(line.as_ref()).map_err(|err| 
-				format!("Error interpreting EDElement from file_hashes, linecount = {}, err = {}", i + 4, err))
-		).collect::<Result<Vec<_>, _>>()?;
+		let e_d_elements = lines.collect::<Vec<_>>().par_iter().enumerate()
+			.map(|(i, line)| EDElement::try_from(line.as_ref()).map_err(|err| (err, i)))
+			.collect::<Result<Vec<_>, _>>()?;
 
 		// Processing the checksums, so that we can verify the integrity
 		// of the file before returning.
@@ -165,24 +150,20 @@ impl EDList {
 		});
 		hasher.input(file_xor_checksum.as_ref());
 		let final_checksum = shared::blake2_to_string(hasher);
+		
+		// By creating the EDList object before comparing xor_checksum with
+		// the one saved in the file_hashes file, we hopefully avoid any optimizations
+		// that would prevent the edlist from using the generated xorchecksum, after comparison.
+		let e_d_list = EDList::new(banlist, e_d_elements, file_xor_checksum);
 
 		// Verifying xor_checksum
-		// By using the file_xor_checksum instead of xor_checksum, we can
-		// make sure that any corruption would also trickle into the next
-		// time the list is read.
-		if file_xor_checksum != xor_checksum {return Err("Saved xor_checksum is not valid".to_string());}
+		if e_d_list.xor_checksum != xor_checksum {Err(EDListOpenError::XorChecksumMismatch)?}
 
 		// Verifying final_checksum.
-		if file_final_checksum != final_checksum {
-			return Err("checksum in file_hashes is not valid!".to_string());
-		}
-
-		let e_d_list = EDList::new(banlist, e_d_elements, file_xor_checksum);
-		match e_d_list.write_backup() {
-			Ok(()) => (),
-			Err(err) => return Err(format!("Error writing backup, err = {}", err))
-		}
-
+		if file_final_checksum != final_checksum {Err(EDListOpenError::FinChecksumMismatch)?}
+		
+		e_d_list.write_backup()?;
+		
 		Ok(e_d_list)
 	}
 
@@ -196,7 +177,7 @@ impl EDList {
 	/// Returns a vector with strings describing all the errors.
 	/// Also sends a message to the UserInterface impl, for every
 	/// element that is being tested.
-	pub fn verify(&self, prefix:Option<&str>, user_interface: &impl UserInterface) -> Vec<String> {
+	pub fn verify(&self, prefix:Option<&str>, user_interface: &impl UserInterface) -> Vec<VerifyError> {
 		match prefix {
 			Some(prefix) => {
 				let element_list = &self.element_list;
@@ -215,7 +196,7 @@ impl EDList {
 
 	/// Goes through all the elements in the given element_list.
 	/// It returns a list of all the errors in a string format.
-	fn verify_loop<T: AsRef<EDElement>>(&self, element_list: &[T], user_interface: &impl UserInterface) -> Vec<String> {
+	fn verify_loop<T: AsRef<EDElement>>(&self, element_list: &[T], user_interface: &impl UserInterface) -> Vec<VerifyError> {
 		let mut error_list = Vec::new();
 		let list_length = element_list.len();
 		let list_length_width = list_length.to_string().chars().count();
@@ -224,12 +205,11 @@ impl EDList {
 			let path = e_d_element.as_ref().get_path();
 			user_interface.send_message(&format!("Verifying file {:0width$} of {} = {}", file_count + 1, list_length, path, width=list_length_width));
 
-			match e_d_element.as_ref().test_integrity() {
-				Ok(()) => (),
-				Err(error_message) => error_list.push(error_message)
+			if let Err(err) = e_d_element.as_ref().test_integrity() {
+				error_list.push(err.into());
 			}
 			if self.banlist.is_in_banlist(path) {
-				error_list.push(format!("\"{}\" is in the banlist.", path));
+				error_list.push(VerifyError::PathInBanlist(path.to_string()));
 			}
 		}
 		error_list
@@ -264,7 +244,7 @@ impl EDList {
 
 			if error.is_none() {
 				if let Err(err) = e_d_element.test_metadata() {
-					error = Some(err);
+					error = Some(err.to_string());
 				}
 			}
 			match error {
@@ -312,17 +292,14 @@ impl EDList {
 	/// 
 	/// When this function returns Ok, it returns a list with
 	/// all the errors created when trying to read files.
-	pub fn create(&mut self, user_interface: &impl UserInterface) -> Result<Vec<String>, String> {
+	pub fn create(&mut self, user_interface: &impl UserInterface) -> Result<Vec<CreateError>, CreateError> {
 		let mut pending_hashing = Vec::new();
 		let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
 		for element in &self.element_list {
 			existing_paths.insert(element.get_path());
 		}
 
-		let index_strings = match self.index(".", user_interface) {
-			Ok(strings) => strings,
-			Err(err) => return Err(format!("Error indexing files, Err = {}", err))
-		};
+		let index_strings = self.index(".", user_interface)?;
 
 		for string in index_strings {
 			if !existing_paths.contains(string.as_str()) {
@@ -330,7 +307,7 @@ impl EDList {
 			}
 		}
 
-		let mut errors = Vec::new();
+		let mut errors: Vec<CreateError> = Vec::new();
 
 		let pending_hashing_length = pending_hashing.len();
 		let pending_hashing_length_width = pending_hashing_length.to_string().chars().count();
@@ -339,7 +316,7 @@ impl EDList {
 			                            pending_hashing_length, string, width=pending_hashing_length_width));
 			match EDElement::from_path(string) {
 				Ok(new_element) => self.add_e_d_element(new_element),
-				Err(err) => errors.push(err)
+				Err(err) => errors.push(err.into())
 			};
 		}
 
@@ -444,26 +421,18 @@ impl EDList {
 	/// 
 	/// Does not index if, file is not a regular readable file, or a symbolic link.
 	/// Does not index paths that are in the banlist.
-	fn index(&self, path: &str, interfacer: &impl UserInterface) -> Result<Vec<String>, String> {
-		let entries = match std::fs::read_dir(path) {
-			Ok(dirs) => dirs,
-			Err(err) => return Err(format!("Error getting subdirs from dir {}, error = {}", path, err))
-		};
+	fn index(&self, path: &str, interfacer: &impl UserInterface) -> Result<Vec<String>, IndexError> {
+		let entries = std::fs::read_dir(path)
+			.map_err(|err| IndexError::CantGetSubDirError(path.to_string(), err.to_string()))?;
 		let mut index_list:Vec<String> = Vec::new();
 		
 		for entry in entries {
-			let (entry, file_type) = match entry {
-				Ok(entry) => match entry.file_type() {
-					Ok(file_type) => (entry, file_type),
-					Err(_err) => return Err("Error getting file type of index".to_string())
-				},
-				Err(_err) => return Err("Error iterating indexes".to_string())
-			};
+			let entry = entry?;
+			let file_type = entry.file_type()?;
 
-			let file_path = match entry.file_name().into_string() {
-				Ok(file_name) => format!("{}/{}", path, file_name),
-				Err(_err) => return Err(format!("Failed to convert OsString to String in path: {}", path))
-			};
+			let file_path = format!("{}/{}", path,
+				entry.file_name().into_string()
+					.map_err(|_|IndexError::OsStringConvertError(path.to_string()))?);
 			// If file_path is in banlist, we should not index it.
 			if self.banlist.is_in_banlist(&file_path) {continue;}
 			if file_type.is_dir() {
@@ -503,31 +472,26 @@ impl EDList {
 	}
 
 	/// Write EDList to ./file_hasher_files/file_hashes
-	pub fn write_hash_file(&self) -> Result<(), String> {
-		match File::create("./file_hasher_files/file_hashes") {
-			Ok(mut file) => self.write_to_file(&mut file, "file_hashes"),
-			Err(err) => Err(format!("Error creating file, Error = {}", err))
-		}
+	pub fn write_hash_file(&self) -> Result<(), WriteHashFileError> {
+		let mut file = File::create("./file_hasher_files/file_hashes")
+			.map_err(|err|WriteHashFileError::ErrorCreatingFile(err.to_string()))?;
+		self.write_edlist_to_file(&mut file, "file_hashes")?;
+		Ok(())
 	}
 
-	fn write_backup(&self) -> Result<(), String> {
-		let backup_dir = "./file_hasher_files/hash_file_backups";
-		match create_dir_all(backup_dir) {
-			Ok(_res) => (),
-			Err(err) => return Err(format!("Error creating hash_file_backups directory, Error = {}", err))
-		};
+	fn write_backup(&self) -> Result<(), WriteBackupError> {
+		const BACKUP_DIR:&str = "./file_hasher_files/hash_file_backups";
+		create_dir_all(BACKUP_DIR).map_err(|err| WriteBackupError::CreateDirectoryError(err.to_string()))?;
 		let local: DateTime<Local> = Local::now();
-		let mut file = match File::create(format!("{}/{}", backup_dir, local)) {
-			Ok(file) => file,
-			Err(err) => return Err(format!("Error creating backup file, err = {}", err))
-		};
-
-		self.write_to_file(&mut file, "hashbackup")
+		let mut file = File::create(format!("{}/{}", BACKUP_DIR, local))
+			.map_err(|err| WriteBackupError::CreateFileError(err.to_string()))?;
+		self.write_edlist_to_file(&mut file, "hashbackup")?;
+		Ok(())
 	}
 
 	/// Used when we need to write hash_file data to a file
 	/// Also used for writing the backups to file.
-	fn write_to_file(&self, file:&mut File, file_name:&str) -> Result<(), String> {
+	fn write_edlist_to_file(&self, file: &mut File, file_name: &str) -> Result<(), WriteEDListToFileError> {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut element_string = String::new();
 
@@ -543,13 +507,11 @@ impl EDList {
 
 		let final_string = format!("{}{}{}{}", list_version_string, xor_checksum_string, fin_checksum_string, element_string);
 
-		if let Err(err) = file.write_all(final_string.as_bytes()) {
-			return Err(format!("Error writing to the file {}. err = {}", file_name, err));
-		}
+		file.write_all(final_string.as_bytes())
+			.map_err(|err| WriteEDListToFileError::WriteError(file_name.to_string(), err.to_string()))?;
 
-		if let Err(err) = file.flush() {
-			return Err(format!("Error writing to the file {}. err = {}", file_name, err));
-		}
+		file.flush()
+			.map_err(|err| WriteEDListToFileError::FlushError(file_name.to_string(), err.to_string()))?;
 		
 		Ok(())
 	}

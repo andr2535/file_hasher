@@ -22,7 +22,7 @@ use crate::term_interfacer::UserMessenger;
 
 use structopt::StructOpt;
 
-fn handle_error_list(error_list:Vec<String>, prepend_message:&str, no_errors_message:Option<&str>) {
+fn handle_error_list(error_list:Vec<impl std::error::Error>, prepend_message:&str, no_errors_message:Option<&str>) {
 	if !error_list.is_empty() {
 		let length = error_list.len();
 		let length_width = length.to_string().chars().count();
@@ -53,7 +53,7 @@ fn main() {
 	let mut edlist = match e_d_list::EDList::open(UserMessenger::new(), banlist) {
 		Ok(list) => list,
 		Err(err) => {
-			println!("Error opening list, {}", err);
+			println!("Error opening list, err:\n{}", err);
 			return;
 		}
 	};

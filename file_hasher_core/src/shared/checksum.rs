@@ -19,7 +19,7 @@ use super::constants::HASH_OUTPUT_LENGTH;
 use std::ops::{BitXorAssign, Deref, DerefMut};
 
 type ChecksumArray = [u8; HASH_OUTPUT_LENGTH];
-/// Checksum defines the standard length of any checksums 
+/// Checksum defines the standard length of any checksums
 /// used in file_hasher_core.
 ///
 /// Also defines a set of traits for better ergonomics.
