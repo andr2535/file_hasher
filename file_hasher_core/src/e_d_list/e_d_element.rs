@@ -16,7 +16,7 @@
 */
 
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
-use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
+use blake2::{VarBlake2b, digest::{Update, VariableOutput}};
 
 use crate::shared::constants::HASH_OUTPUT_LENGTH;
 use crate::{shared, shared::Checksum};
@@ -75,11 +75,11 @@ impl EDElement {
 	/// while also creating the element_hash for the EDElement.
 	fn from_internal(path: String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
-		hasher.input(path.as_bytes());
-		hasher.input(&modified_time.to_le_bytes());
+		hasher.update(path.as_bytes());
+		hasher.update(&modified_time.to_le_bytes());
 		match &variant_fields {
-			EDVariantFields::File(file) => hasher.input(*file.file_checksum),
-			EDVariantFields::Link(link) => hasher.input(link.link_target.as_bytes())
+			EDVariantFields::File(file) => hasher.update(*file.file_checksum),
+			EDVariantFields::Link(link) => hasher.update(link.link_target.as_bytes())
 		}
 		let element_hash = shared::blake2_to_checksum(hasher).unwrap();
 		EDElement{path, modified_time, variant_fields, element_hash}
@@ -240,7 +240,7 @@ impl EDElement {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		loop {
 			let result_size = file.read(&mut buffer)?;
-			hasher.input(&buffer[0..result_size]);
+			hasher.update(&buffer[0..result_size]);
 			if result_size != buffer_size {break;}
 		}
 		Ok(shared::blake2_to_checksum(hasher).unwrap())

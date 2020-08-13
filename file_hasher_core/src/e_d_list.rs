@@ -26,7 +26,7 @@ use super::{shared, shared::{Checksum, UserInterface, constants::*}};
 use super::path_banlist::PathBanlist;
 
 use chrono::prelude::{DateTime, Local};
-use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
+use blake2::{VarBlake2b, digest::{Update, VariableOutput}};
 use rayon::prelude::*;
 use join::try_join;
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
@@ -117,8 +117,9 @@ impl EDList {
 		
 		// Parsing file_xor_checksum
 		let file_xor_checksum = {
-			let xor_checksum_string = if let Some(xor_checksum_string) =
-			    shared::prefix_split(XOR_CHECKSUM_PREFIX, xor_checksum_line.as_ref()) {
+			let xor_checksum_string = if let Some(xor_checksum_string) = 
+			    xor_checksum_line.strip_prefix(XOR_CHECKSUM_PREFIX) 
+			{
 				xor_checksum_string
 			} else {Err(EDListOpenError::InvalidXorChecksum)?};
 
@@ -129,8 +130,7 @@ impl EDList {
 
 		// Parsing file_final_checksum
 		let file_final_checksum = {
-			if let Some(fin_checksum_string) = 
-			    shared::prefix_split(FIN_CHECKSUM_PREFIX, fin_checksum_line.as_ref()) {
+			if let Some(fin_checksum_string) = fin_checksum_line.strip_prefix(FIN_CHECKSUM_PREFIX) {
 				fin_checksum_string
 			} else {Err(EDListOpenError::InvalidFinChecksum)?}
 		};
@@ -145,10 +145,10 @@ impl EDList {
 		// Processing the checksums, so that we can verify the integrity
 		// of the file before returning.
 		e_d_elements.iter().for_each(|element| {
-			hasher.input(element.get_hash().as_ref());
+			hasher.update(element.get_hash().as_ref());
 			xor_checksum ^= element.get_hash();
 		});
-		hasher.input(file_xor_checksum.as_ref());
+		hasher.update(file_xor_checksum.as_ref());
 		let final_checksum = shared::blake2_to_string(hasher);
 		
 		// By creating the EDList object before comparing xor_checksum with
@@ -184,7 +184,7 @@ impl EDList {
 				let mut elements_with_prefix:Vec<&EDElement> = Vec::with_capacity(element_list.len());
 				for e_d_element in element_list {
 					let path = e_d_element.get_path();
-					if shared::prefix_split(prefix, path).is_some() {
+					if path.strip_prefix(prefix).is_some() {
 						elements_with_prefix.push(e_d_element);
 					}
 				}
@@ -366,9 +366,10 @@ impl EDList {
 	/// Also sends a list of all the files that have the
 	/// same file_hash as at least one other file to the
 	/// struct implementing UserInterface.
+	/// TODO: Fix issue where relative checksum that is moved along with target, doesn't generate a duplicate.
 	pub fn find_duplicates(&self, user_interface: &impl UserInterface) {
 		use std::collections::hash_map::Entry;
-		let mut link_dups:HashMap<(&str, &str), Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
+		let mut link_dups:HashMap<&str, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		let mut file_dups:HashMap<Checksum, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		for element in &self.element_list {
 			match element.get_variant() {
@@ -381,10 +382,7 @@ impl EDList {
 					}
 				},
 				e_d_element::EDVariantFields::Link(link) => {
-					let last_slash = element.get_path().rfind('/').expect(
-					                 "No '/' character found in an EDElements path.\n\
-					                 This is either a bug, or the file_hashes file has been fiddled with");
-					match link_dups.entry((&element.get_path()[..=last_slash], &link.link_target)) {
+					match link_dups.entry(&link.link_target) {
 						Entry::Occupied(entry) => entry.into_mut().push(element),
 						Entry::Vacant(entry) => {
 							entry.insert(vec!(element));
@@ -398,7 +396,7 @@ impl EDList {
 		user_interface.send_message("Links with same target path and origin directory:");
 		link_dups.iter().filter(|(_, v)| v.len() > 1).for_each(|(key, vector)| {
 			collision_blocks += 1;
-			user_interface.send_message(&format!("{:4}links with target path = \"{}\":", "", key.1));
+			user_interface.send_message(&format!("{:4}links with target path = \"{}\":", "", key));
 			for element in vector {
 				user_interface.send_message(&format!("{:8}{}","", element.get_path()));
 			}
@@ -455,7 +453,7 @@ impl EDList {
 	}
 
 	fn get_version_from_line(line: &str) -> ListVersion {
-		match shared::prefix_split(LIST_VERSION_PREFIX, line) {
+		match line.strip_prefix(LIST_VERSION_PREFIX) {
 			Some("1.1") => ListVersion::V1_1,
 			Some("1.0") => ListVersion::V1_0,
 			Some(identifier) => ListVersion::InvalidVersion(identifier),
@@ -497,9 +495,9 @@ impl EDList {
 
 		for element in &self.element_list {
 			element_string.push_str(format!("{}\n", element).as_ref());
-			hasher.input(element.get_hash().as_ref());
+			hasher.update(element.get_hash().as_ref());
 		}
-		hasher.input(&self.xor_checksum.as_ref());
+		hasher.update(&self.xor_checksum.as_ref());
 
 		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
 		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum.as_ref()));
@@ -541,15 +539,15 @@ impl EDList {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut elements_found = false;
 		self.element_list.iter()
-		    .filter_map(|e_d_element| try_join!(Some(e_d_element), shared::prefix_split(relative_path.as_ref(), e_d_element.get_path())))
+		    .filter_map(|e_d_element| try_join!(Some(e_d_element), e_d_element.get_path().strip_prefix(relative_path.as_ref() as &str)))
 		    .for_each(|(e_d_element, postfix)|
 		{
 			elements_found = true;
-			hasher.input(postfix.as_bytes());
-			hasher.input(&e_d_element.get_modified_time().to_le_bytes());
+			hasher.update(postfix.as_bytes());
+			hasher.update(&e_d_element.get_modified_time().to_le_bytes());
 			match e_d_element.get_variant() {
-				e_d_element::EDVariantFields::File(file) => hasher.input(&file.file_checksum.as_ref()),
-				e_d_element::EDVariantFields::Link(link) => hasher.input(&link.link_target.as_bytes())
+				e_d_element::EDVariantFields::File(file) => hasher.update(&file.file_checksum.as_ref()),
+				e_d_element::EDVariantFields::Link(link) => hasher.update(&link.link_target.as_bytes())
 			}
 		});
 		if elements_found {

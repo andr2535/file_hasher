@@ -16,7 +16,7 @@
 */
 
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
-use blake2::{VarBlake2b, digest::{Input, VariableOutput}};
+use blake2::{VarBlake2b, digest::{Update, VariableOutput}};
 use crate::{shared, shared::UserInterface, shared::constants};
 
 enum LineType<'a> {
@@ -77,7 +77,7 @@ impl PathBanlist {
 			
 			match PathBanlist::identify_line(&line) {
 				LineType::BannedPath => {
-					hasher.input(line.as_bytes());
+					hasher.update(line.as_bytes());
 
 					PathBanlist::insert_to_banlist(line.chars(), &mut banned_paths);
 				},
@@ -137,7 +137,7 @@ impl PathBanlist {
 				Ok(_len) => (),
 				Err(err) => return Err(format!("Error writing line to file, Error = {}", err))
 			}
-			hasher.input(string.as_bytes());
+			hasher.update(string.as_bytes());
 		}
 
 		let write_result = file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes());
@@ -160,7 +160,7 @@ impl PathBanlist {
 		};
 
 		// Figure out whether line is a checksum.
-		if let Some(checksum) = shared::prefix_split(constants::FIN_CHECKSUM_PREFIX, line) {
+		if let Some(checksum) = line.strip_prefix(constants::FIN_CHECKSUM_PREFIX) {
 			return LineType::Checksum(checksum);
 		}
 
