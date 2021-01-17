@@ -64,8 +64,11 @@ fn main() {
 	loop {
 		let mut break_bool = true;
 		println!("Enter one of the following operations:");
-		let answer = interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\nSort\nDuplicates\nRelativeChecksum").to_lowercase();
-		match answer.as_str() {
+		let answer = interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\n\
+		                                         Sort\nDuplicates\nRelativeChecksum\n\
+		                                         Benchmark {optional byte argument}").to_lowercase();
+		let mut answer = answer.split(' ');
+		match answer.next().unwrap() {
 			"create" =>
 				match edlist.create(&interfacer) {
 					Ok(err_list) => {
@@ -85,6 +88,17 @@ fn main() {
 			"sort" => edlist.sort(),
 			"duplicates" => edlist.find_duplicates(&interfacer),
 			"relativechecksum" => edlist.relative_checksum(&interfacer),
+			"benchmark" => {
+				let argument = answer.next().map(|argument| usize::from_str_radix(argument, 10)).unwrap_or(Ok(1024*1024*1024*10));
+
+				match argument {
+					Ok(argument) => e_d_list::EDList::benchmark(&interfacer, argument),
+					Err(_) => {
+						println!("Invalid byte argument entered, must be a whole positive number");
+						break_bool = false;
+					}
+				}
+			},
 			_ => {
 				break_bool = false;
 				println!("Invalid value entered, try again!");

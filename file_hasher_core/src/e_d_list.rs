@@ -557,4 +557,44 @@ impl EDList {
 			user_interface.send_message("No files were found in the specified path");
 		}
 	}
+
+	/// Will perform a benchmark of the hashing performance on the computer
+	/// running it.
+	/// 
+	/// Will not modify the contents of the EDList at all.
+	pub fn benchmark(user_interface: &impl UserInterface, bytes: usize) {
+		struct ReadMock {
+			bytes_left: usize
+		}
+		impl std::io::prelude::Read for ReadMock {
+			fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+				if self.bytes_left > buf.len() {
+					self.bytes_left -= buf.len();
+					Ok(buf.len())
+				}
+				else {
+					self.bytes_left = 0;
+					Ok(self.bytes_left)
+				}
+			}
+		}
+
+		let mock_file = ReadMock{bytes_left: bytes};
+		user_interface.send_message("Now benchmarking...");
+
+		let before = std::time::Instant::now();
+		let checksum = EDElement::hash_file(mock_file).unwrap();
+		let time_elapsed_sec = before.elapsed().as_secs_f64();
+
+		user_interface.send_message(&format!("resulting hash = {:?}", checksum));
+
+		let units = ["", "kibi", "mebi", "gibi"];
+
+		let mut cur_unit_over_time = bytes as f64 / time_elapsed_sec;
+
+		for unit in units.iter() {
+			user_interface.send_message(&format!("{:.2} {}bytes hashed a second", cur_unit_over_time, unit));
+			cur_unit_over_time /= 1024f64;
+		}
+	} 
 }

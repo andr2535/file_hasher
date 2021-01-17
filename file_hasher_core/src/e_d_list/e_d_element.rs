@@ -234,7 +234,7 @@ impl EDElement {
 	/// u8 vector, of length HASH_OUTPUT_LENGTH.
 	/// If there is trouble reading the file, we will return
 	/// the error given.
-	fn hash_file(mut file: File) -> Result<Checksum, FileHashingError> {
+	pub fn hash_file(mut file: impl Read) -> Result<Checksum, FileHashingError> {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
