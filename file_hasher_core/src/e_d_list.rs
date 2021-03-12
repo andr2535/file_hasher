@@ -116,17 +116,11 @@ impl EDList {
 		}
 		
 		// Parsing file_xor_checksum
-		let file_xor_checksum = {
-			let xor_checksum_string = if let Some(xor_checksum_string) = 
-			    xor_checksum_line.strip_prefix(XOR_CHECKSUM_PREFIX) 
-			{
-				xor_checksum_string
-			} else {Err(EDListOpenError::InvalidXorChecksum)?};
-
+		let file_xor_checksum = if let Some(xor_checksum_string) = xor_checksum_line.strip_prefix(XOR_CHECKSUM_PREFIX) {
 			let mut xor_checksum = Checksum::default();
 			hex::decode_to_slice(xor_checksum_string, &mut *xor_checksum)?;
 			xor_checksum
-		};
+		} else {Err(EDListOpenError::InvalidXorChecksum)?};
 
 		// Parsing file_final_checksum
 		let file_final_checksum = {
@@ -178,19 +172,13 @@ impl EDList {
 	/// Also sends a message to the UserInterface impl, for every
 	/// element that is being tested.
 	pub fn verify(&self, prefix:Option<&str>, user_interface: &impl UserInterface) -> Vec<VerifyError> {
-		match prefix {
-			Some(prefix) => {
-				let element_list = &self.element_list;
-				let mut elements_with_prefix:Vec<&EDElement> = Vec::with_capacity(element_list.len());
-				for e_d_element in element_list {
-					let path = e_d_element.get_path();
-					if path.strip_prefix(prefix).is_some() {
-						elements_with_prefix.push(e_d_element);
-					}
-				}
-				self.verify_loop(&elements_with_prefix, user_interface)
-			}
-			None => self.verify_loop(&self.element_list, user_interface)
+		if let Some(prefix) = prefix {
+			let element_list = &self.element_list;
+			let prefix_elements:Vec<_> = element_list.iter().filter(|e|e.get_path().strip_prefix(prefix).is_some()).collect();
+			self.verify_loop(&prefix_elements, user_interface)
+		}
+		else {
+			self.verify_loop(&self.element_list, user_interface)
 		}
 	}
 
@@ -588,13 +576,19 @@ impl EDList {
 
 		user_interface.send_message(&format!("resulting hash = {:?}", checksum));
 
-		let units = ["", "kibi", "mebi", "gibi"];
+		let units = ["Bytes", "KiB", "MiB", "GiB"];
 
 		let mut cur_unit_over_time = bytes as f64 / time_elapsed_sec;
 
+		let length = format!("{:.2}", cur_unit_over_time).len();
+		let mut longest = 0;
 		for unit in units.iter() {
-			user_interface.send_message(&format!("{:.2} {}bytes hashed a second", cur_unit_over_time, unit));
+			let result = format!("|{: <width$.2} {: <width2$} hashed a second|", cur_unit_over_time, unit, width=length, width2=5);
+			longest = longest.max(result.len());
+			user_interface.send_message(&format!("|{:-<width$}|", "", width=longest-2));
+			user_interface.send_message(&result);
 			cur_unit_over_time /= 1024f64;
 		}
+		user_interface.send_message(&format!("|{:-<width$}|", "", width=longest-2));
 	} 
 }

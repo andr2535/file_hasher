@@ -94,7 +94,7 @@ fn main() {
 				match argument {
 					Ok(argument) => e_d_list::EDList::benchmark(&interfacer, argument),
 					Err(_) => {
-						println!("Invalid byte argument entered, must be a whole positive number");
+						println!("Invalid byte argument entered, must be a whole positive number smaller or equal to {}", usize::MAX);
 						break_bool = false;
 					}
 				}

@@ -1,6 +1,6 @@
 [package]
 name = "file_hasher_core"
-version = "1.0.8"
+version = "1.0.9"
 authors = ["Andreas Ejdesgaard <andreasejdesgaard@protonmail.com>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
@@ -8,6 +8,6 @@ license = "GPL-3.0-or-later"
 [dependencies]
 blake2 = "0.9.1"
 chrono = "0.4.19"
-hex = "0.4.2"
+hex = "0.4.3"
 rayon = "1.5.0"
-join = "0.1.1"
+join = "0.3.0"
