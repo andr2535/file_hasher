@@ -14,7 +14,6 @@
 	You should have received a copy of the GNU General Public License
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
-
 use file_hasher_core::*;
 
 mod term_interfacer;
@@ -43,14 +42,14 @@ struct Opts { }
 fn main() {
 	let _opts = Opts::from_args();
 
-	let banlist = match path_banlist::PathBanlist::open(UserMessenger::new()) {
+	let banlist = match path_banlist::PathBanlist::open(&UserMessenger::new()) {
 		Ok(result) => result,
 		Err(err) => {
 			println!("Error opening banlist, Error = {}", err);
 			return;
 		}
 	};
-	let mut edlist = match e_d_list::EDList::open(UserMessenger::new(), banlist) {
+	let mut edlist = match e_d_list::EDList::open(".", &UserMessenger::new(), banlist) {
 		Ok(list) => list,
 		Err(err) => {
 			println!("Error opening list, err:\n{}", err);
@@ -65,7 +64,7 @@ fn main() {
 		let mut break_bool = true;
 		println!("Enter one of the following operations:");
 		let answer = interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\n\
-		                                         Sort\nDuplicates\nRelativeChecksum\n\
+		                                         Sort\nDuplicates\nRelativeChecksum\nSync\n\
 		                                         Benchmark {optional byte argument}").to_lowercase();
 		let mut answer = answer.split(' ');
 		match answer.next().unwrap() {
@@ -88,8 +87,9 @@ fn main() {
 			"sort" => edlist.sort(),
 			"duplicates" => edlist.find_duplicates(&interfacer),
 			"relativechecksum" => edlist.relative_checksum(&interfacer),
+			"sync" => if let Err(err) = edlist.sync(&interfacer) {println!("Error during syncing: {}", err)},
 			"benchmark" => {
-				let argument = answer.next().map(|argument| usize::from_str_radix(argument, 10)).unwrap_or(Ok(1024*1024*1024*10));
+				let argument = answer.next().map(|argument| argument.parse()).unwrap_or(Ok(1024*1024*1024*10));
 
 				match argument {
 					Ok(argument) => e_d_list::EDList::benchmark(&interfacer, argument),

@@ -21,4 +21,4 @@ mod interfacer;
 pub mod constants;
 pub use checksum::Checksum;
 pub use functions::*;
-pub use interfacer::UserInterface;
+pub use interfacer::{UserInterface, StubUserInterface};

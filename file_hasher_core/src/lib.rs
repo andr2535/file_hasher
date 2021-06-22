@@ -14,6 +14,7 @@
 	You should have received a copy of the GNU General Public License
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
+#![feature(drain_filter)]
 #![allow(clippy::try_err)]
 mod shared;
 pub mod e_d_list;

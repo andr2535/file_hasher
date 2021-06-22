@@ -25,26 +25,12 @@ use hex::decode_to_slice;
 pub mod errors;
 use errors::*;
 
-/// FileElement is a struct that contains the fields that
-/// a file needs, but a symbolic link does not need.
-#[derive(Debug)]
-pub struct FileElement {
-	pub file_checksum: Checksum
-}
-
-/// LinkElement is a struct that contains the fields, that
-/// a symbolic link needs, that a file does not need.
-#[derive(Debug)]
-pub struct LinkElement {
-	pub link_target: String
-}
-
 /// EDVariantFields is used to manage whether we are storing
 /// a file or a symbolic link.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, std::hash::Hash, Clone)]
 pub enum EDVariantFields {
-	File(FileElement),
-	Link(LinkElement)
+	File{checksum: Checksum},
+	Link{target: String}
 }
 
 /// EDElement, a shorthand for Error-detect-element
@@ -74,15 +60,20 @@ impl EDElement {
 	/// from_internal creates an EDElement from the given arguments
 	/// while also creating the element_hash for the EDElement.
 	fn from_internal(path: String, modified_time: u64, variant_fields: EDVariantFields) -> EDElement {
+		let mut new_element = EDElement{path, modified_time, variant_fields, element_hash:Checksum::default()};
+		new_element.calculate_hash();
+		new_element
+	}
+
+	fn calculate_hash(&mut self) {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
-		hasher.update(path.as_bytes());
-		hasher.update(&modified_time.to_le_bytes());
-		match &variant_fields {
-			EDVariantFields::File(file) => hasher.update(*file.file_checksum),
-			EDVariantFields::Link(link) => hasher.update(link.link_target.as_bytes())
+		hasher.update(self.path.as_bytes());
+		hasher.update(self.modified_time.to_le_bytes());
+		match &self.variant_fields {
+			EDVariantFields::File{checksum} => hasher.update(checksum.as_ref()),
+			EDVariantFields::Link{target} => hasher.update(target.as_bytes())
 		}
-		let element_hash = shared::blake2_to_checksum(hasher).unwrap();
-		EDElement{path, modified_time, variant_fields, element_hash}
+		self.element_hash = shared::blake2_to_checksum(hasher).unwrap();
 	}
 	
 	/// from_path generates an EDElement from a path.
@@ -108,8 +99,8 @@ impl EDElement {
 		if metadata.is_file() {
 			// The path is a file.
 			let file = File::open(&path).map_err(|err| EDElementError::OpenFileError(path.to_string(), err))?;
-			let hash = EDElement::hash_file(file).map_err(|err| EDElementError::FileHashingError(path.to_string(), err))?;
-			let file_fields = EDVariantFields::File(FileElement{file_checksum: hash});
+			let checksum = EDElement::hash_file(file).map_err(|err| EDElementError::FileHashingError(path.to_string(), err))?;
+			let file_fields = EDVariantFields::File{checksum};
 			Ok(EDElement::from_internal(path, modified_time, file_fields))
 		}
 		else {
@@ -118,7 +109,7 @@ impl EDElement {
 				Some(link_path) => {
 					// Verify that the link path exists.
 					EDElement::verify_link_path(&path, &link_path)?;
-					let link_fields = EDVariantFields::Link(LinkElement{link_target: link_path.to_string()});
+					let link_fields = EDVariantFields::Link{target: link_path.to_string()};
 					Ok(EDElement::from_internal(path, modified_time, link_fields))
 				},
 				None => Err(EDElementError::InvalidUtf8Link(path))?
@@ -171,11 +162,11 @@ impl EDElement {
 		};
 		
 		match &self.variant_fields {
-			EDVariantFields::File(file_element) => {
+			EDVariantFields::File{checksum} => {
 				let file = File::open(&self.path).map_err(|err| EDElementError::OpenFileError(self.path.to_owned(), err))?;
 				let file_hash = EDElement::hash_file(file)
 					.map_err(|err| EDElementError::FileHashingError(self.path.to_owned(), err))?;
-				if file_hash == file_element.file_checksum {
+				if file_hash == *checksum {
 					if time_changed {
 						Err(EDElementVerifyError::TimeChangedButFileCorrectError(self.path.to_owned()))?
 					}
@@ -190,12 +181,12 @@ impl EDElement {
 					Err(EDElementVerifyError::InvalidChecksum(self.path.to_owned()))?
 				}
 			},
-			EDVariantFields::Link(link_element) => {
+			EDVariantFields::Link{target} => {
 				let link_target = match fs::read_link(&self.path).unwrap().to_str() {
 					Some(link_target) => link_target.to_string(),
 					None => Err(EDElementError::LinkTargetInvalidUtf8(self.path.to_owned()))?
 				};
-				if link_target == link_element.link_target {
+				if link_target == *target {
 					if time_changed {
 						Err(EDElementVerifyError::LinkTargetValidTimeChanged(self.path.to_owned()))?
 					}
@@ -264,7 +255,12 @@ impl EDElement {
 	/// Returns the path of this EDElement as an owned String.
 	/// This will drop the EDElement in the process.
 	pub fn take_path(mut self) -> String {
-		std::mem::replace(&mut self.path, String::new())
+		std::mem::take(&mut self.path)
+	}
+	/// Override set path, only used for syncing two lists.
+	pub fn update_path(&mut self, new_path: String) {
+		self.path = new_path;
+		self.calculate_hash();
 	}
 
 	pub fn get_modified_time(&self) -> u64 {
@@ -316,7 +312,7 @@ impl std::convert::TryFrom<&str> for EDElement {
 					None             => return Err(EDElementParseError::NoModifiedTimeTerminator)
 				}
 			}
-			u64::from_str_radix(&time_string, 10)?
+			time_string.parse::<u64>()?
 		};
 		
 		// Parse the variant data of the EDElement.
@@ -329,7 +325,7 @@ impl std::convert::TryFrom<&str> for EDElement {
 				char_iterator = char_iterator.as_str()[5 + HASH_OUTPUT_LENGTH * 2..].chars();
 
 				match char_iterator.next() {Some(')') => (), _ => return Err(EDElementParseError::NoVariantTerminator)}
-				EDVariantFields::File(FileElement{file_checksum})
+				EDVariantFields::File{checksum: file_checksum}
 			},
 			b"link(" => {
 				char_iterator = char_iterator.as_str()[5..].chars();
@@ -345,7 +341,7 @@ impl std::convert::TryFrom<&str> for EDElement {
 						None            => return Err(EDElementParseError::NoVariantTerminator)
 					}
 				}
-				EDVariantFields::Link(LinkElement{link_target})
+				EDVariantFields::Link{target: link_target}
 			}
 			_ => return Err(EDElementParseError::InvalidVariantIdentifier)
 		};
@@ -356,12 +352,11 @@ impl std::convert::TryFrom<&str> for EDElement {
 		Ok(EDElement::from_internal(path, modified_time, variant_fields))
 	}
 }
-
 impl std::fmt::Display for EDElement {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let variant_fields = match &self.variant_fields {
-			EDVariantFields::File(file) => format!("file({})", hex::encode_upper(*file.file_checksum)),
-			EDVariantFields::Link(link) => format!("link({})", link.link_target.replace(r"\", r"\\").replace(")", r"\)"))
+			EDVariantFields::File{checksum} => format!("file({})", hex::encode_upper(checksum.as_ref())),
+			EDVariantFields::Link{target} => format!("link({})", target.replace(r"\", r"\\").replace(")", r"\)"))
 		};
 		write!(f, "[{},{},{}]", self.path.replace(r"\", r"\\").replace(",", r"\,"), self.modified_time, variant_fields)
 	}

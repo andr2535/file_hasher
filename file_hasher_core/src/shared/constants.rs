@@ -21,3 +21,5 @@ pub const XOR_CHECKSUM_PREFIX:  &str  = "XORCHECKSUM = ";
 
 pub const LIST_VERSION_PREFIX:  &str  = "LISTVERSION = ";
 pub const CURRENT_LIST_VERSION: &str  = "1.1";
+
+pub const TMPCOPYDIR:           &str = "./file_hasher_files/tmpcpyfldr/";

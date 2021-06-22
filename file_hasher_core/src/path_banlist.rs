@@ -19,10 +19,13 @@ use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collectio
 use blake2::{VarBlake2b, digest::{Update, VariableOutput}};
 use crate::{shared, shared::UserInterface, shared::constants};
 
+pub mod errors;
+use errors::*;
+
 enum LineType<'a> {
 	Comment,
 	Checksum(&'a str),
-	BannedPath
+	BannedPath(&'a str)
 }
 
 #[derive(Debug)]
@@ -45,7 +48,7 @@ impl PathBanlist {
 	/// give input if an issue arises.
 	/// If attempts go wrong, the funtion will return a string, with a
 	/// description of the problem.
-	pub fn open(banlist_interfacer: impl UserInterface) -> Result<PathBanlist, String> {
+	pub fn open(banlist_interfacer: &impl UserInterface) -> Result<PathBanlist, OpenPathBanlistError> {
 		let file = match File::open("./file_hasher_files/banlist") {
 			Ok(file) => file,
 			Err(err) => {
@@ -54,12 +57,10 @@ impl PathBanlist {
 					    &format!("banlist file could not be opened, error message = {}\
 					    \nDo you wish to create a new banlist? YES/NO", err));
 					if create_new == "YES" {
-						match PathBanlist::new(banlist_interfacer) {
-							Ok(banlist) => return Ok(banlist),
-							Err(err) => return Err(err)
-						}
+						PathBanlist::create()?;
+						return PathBanlist::open(banlist_interfacer);
 					}
-					else if create_new == "NO" {return Err("banlist file could not be opened".to_string());}
+					else if create_new == "NO" {return Err(OpenPathBanlistError::UserDeniedNewList);}
 				}
 			}
 		};
@@ -70,13 +71,8 @@ impl PathBanlist {
 		let mut banned_paths: HashMap<char, CharMapper> = HashMap::new();
 
 		for line in buf_reader.lines() {
-			let line = match line {
-				Ok(line) => line,
-				Err(err) => return Err(format!("Error reading line, error message = {}", err))
-			};
-			
-			match PathBanlist::identify_line(&line) {
-				LineType::BannedPath => {
+			match PathBanlist::identify_line(&line?) {
+				LineType::BannedPath(line) => {
 					hasher.update(line.as_bytes());
 
 					PathBanlist::insert_to_banlist(line.chars(), &mut banned_paths);
@@ -85,7 +81,7 @@ impl PathBanlist {
 					match checksum {
 						None => checksum = Some(value.to_string()),
 						Some(_val) => {
-							return Err("More than one checksum in banlist, remove the redundant ones!".to_string());
+							return Err(OpenPathBanlistError::DuplicateChecksum);
 						}
 					}
 				}
@@ -97,55 +93,32 @@ impl PathBanlist {
 		let hash_string = shared::blake2_to_string(hasher);
 		match checksum {
 			Some(checksum) => {
-				if hash_string != checksum {
-					return Err(format!("Checksum for banlist is invalid.\n\
-					                    If the current banlist is correct,\nReplace the checksum in the banlist file with the following:\n\
-					                    {}{}", constants::FIN_CHECKSUM_PREFIX, hash_string));
-				}
+				if hash_string == checksum {Ok(PathBanlist{banned_paths})}
+				else {Err(OpenPathBanlistError::InvalidChecksum(hash_string))}
 			},
-			None => {
-					return Err(format!("There is no checksum in the banlist file.\n\
-					                    If the current banlist is correct,\nType the following line into the banlist file:\n\
-					                    {}{}", constants::FIN_CHECKSUM_PREFIX, hash_string));
-			}
+			None => {Err(OpenPathBanlistError::MissingChecksum(hash_string))}
 		}
-
-		Ok(PathBanlist{banned_paths})
 	}
-	/// Attempts to create a new banlist file, and then opens it using
-	/// the open function.
+	/// Attempts to create a new banlist file.
 	/// Requires a object that implements UserInterface, so that it can send it
 	/// on to the open function.
 	/// When it fails, it returns a string containing information about
 	/// the error.
-	fn new(banlist_interfacer: impl UserInterface) -> Result<PathBanlist, String> {
-		match create_dir_all("./file_hasher_files") {
-			Ok(()) => (),
-			Err(err) => return Err(format!("Error creating file_hasher directory, Error = {}", err))
-		};
-		
-		let mut file = match File::create("./file_hasher_files/banlist") {
-			Ok(file) => file,
-			Err(err) => return Err(format!("Error creating file, Error = {}", err))
-		};
-		
+	fn create() -> Result<(), NewPathBanlistError> {
+		create_dir_all("./file_hasher_files").map_err(NewPathBanlistError::CreatingFileHasherDir)?;
+		let mut file = File::create("./file_hasher_files/banlist").map_err(NewPathBanlistError::CreatingBanlist)?;
+
 		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let def_banned_list = ["./lost+found/", "./.Trash-1000/", "./file_hasher_files/"];
 
 		for string in def_banned_list.iter() {
-			match file.write(format!("{}\n", string).as_bytes()) {
-				Ok(_len) => (),
-				Err(err) => return Err(format!("Error writing line to file, Error = {}", err))
-			}
+			file.write(format!("{}\n", string).as_bytes()).map_err(NewPathBanlistError::WriteFileError)?;
 			hasher.update(string.as_bytes());
 		}
 
-		let write_result = file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes());
-
-		match write_result {
-			Ok(_len) => PathBanlist::open(banlist_interfacer),
-			Err(err) => Err(format!("Error writing checksum to banlist, Error = {}", err))
-		}
+		file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes())
+		    .map_err(NewPathBanlistError::WriteFileError)?;
+		Ok(())
 	}
 
 	/// identify_line determines if a line is a comment, a checksum or a banned path.
@@ -165,7 +138,7 @@ impl PathBanlist {
 		}
 
 		// If line is not identified as a comment or a checksum, it must be a bannedpath.
-		LineType::BannedPath
+		LineType::BannedPath(line)
 	}
 	
 	/// Used internally by the path_banlist open constructor,
@@ -223,5 +196,10 @@ impl PathBanlist {
 			}
 		}
 		false
+	}
+
+	/// Creates a PathBanlist without a backing file.
+	pub(crate) fn new_dummy() -> PathBanlist {
+		PathBanlist{banned_paths: HashMap::new()}
 	}
 }

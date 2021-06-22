@@ -1,4 +1,6 @@
 use super::*;
+use crate::path_banlist::errors::*;
+
 #[derive(Debug)]
 pub enum EDListOpenError {
 	CouldNotOpenFileHashesFile,
@@ -211,5 +213,44 @@ impl std::fmt::Display for WriteHashFileError {
 impl From<WriteEDListToFileError> for WriteHashFileError {
 	fn from(err: WriteEDListToFileError) -> WriteHashFileError {
 		WriteHashFileError::WriteEDListToFileError(err)
+	}
+}
+
+#[derive(Debug)]
+pub enum SyncFromError {
+	OpenPathBanlistError(OpenPathBanlistError),
+	EDListOpenError(EDListOpenError),
+	GetPathParentError,
+	IoError(std::io::Error),
+	InvalidUtf8Link(String),
+	ChecksumValidationError
+}
+impl std::error::Error for SyncFromError { }
+impl std::fmt::Display for SyncFromError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		use SyncFromError::*;
+		match self {
+			OpenPathBanlistError(err) => write!(f, "Error: {}, prevented PathBanlist from opening", err),
+			EDListOpenError(err) => write!(f, "Error: {}, prevented EDList from opening", err),
+			GetPathParentError => write!(f, "Error getting parent of path during move or copy operation"),
+			IoError(err) => write!(f, "IOError During sync FileOperation: {}", err),
+			InvalidUtf8Link(err) => write!(f, "Invalid UTF-8 symbolic link: {}", err),
+			ChecksumValidationError => write!(f, "There was an error validation the sync operations\nPlease restore the latest EDList backup.")
+		}
+	}
+}
+impl From<OpenPathBanlistError> for SyncFromError {
+	fn from(err: OpenPathBanlistError) -> SyncFromError {
+		SyncFromError::OpenPathBanlistError(err)
+	}
+}
+impl From<EDListOpenError> for SyncFromError {
+	fn from(err: EDListOpenError) -> SyncFromError {
+		SyncFromError::EDListOpenError(err)
+	}
+}
+impl From<std::io::Error> for SyncFromError {
+	fn from(err: std::io::Error) -> SyncFromError {
+		SyncFromError::IoError(err)
 	}
 }

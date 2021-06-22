@@ -1,6 +1,6 @@
 [package]
 name = "file_hasher_core"
-version = "1.0.9"
+version = "1.1.0"
 authors = ["Andreas Ejdesgaard <andreasejdesgaard@protonmail.com>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
@@ -11,3 +11,5 @@ chrono = "0.4.19"
 hex = "0.4.3"
 rayon = "1.5.0"
 join = "0.3.0"
+itertools = "0.10.0"
+filetime = "0.2.14"

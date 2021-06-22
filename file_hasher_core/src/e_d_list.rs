@@ -15,27 +15,43 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-
 pub mod errors;
 pub mod e_d_element;
 
 use errors::*;
 use self::e_d_element::EDElement;
 use std::convert::TryFrom;
-use super::{shared, shared::{Checksum, UserInterface, constants::*}};
-use super::path_banlist::PathBanlist;
+use super::{shared, shared::{Checksum, UserInterface, StubUserInterface, constants::*}};
+use super::path_banlist::{PathBanlist};
 
 use chrono::prelude::{DateTime, Local};
 use blake2::{VarBlake2b, digest::{Update, VariableOutput}};
 use rayon::prelude::*;
 use join::try_join;
-use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
+use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap, path::Path};
 
 enum ListVersion<'a> {
 	V1_0,
 	V1_1,
 	MissingIdentifier,
 	InvalidVersion(&'a str)
+}
+
+#[derive(Debug)]
+enum FileOperation {
+	Delete(String),
+	Move{from: String, to: String},
+	Copy{from: String, to: String}
+}
+impl std::fmt::Display for FileOperation {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		use FileOperation::*;
+		match self {
+			Delete(path) => write!(f, "Delete {}", path),
+			Move{from, to} => write!(f, "Move {} to {}", from, to),
+			Copy{from, to} => write!(f, "Copy {} to {}", from, to)
+		}
+	}
 }
 
 /// EDList is a list of all the files in a subdirectory
@@ -59,10 +75,11 @@ enum ListVersion<'a> {
 pub struct EDList {
 	element_list: Vec<EDElement>,
 	banlist: PathBanlist,
-	xor_checksum: Checksum
+	xor_checksum: Checksum,
+	root_path: String
 }
 impl EDList {
-	/// Attempts to open the ./file_hasher_files/file_hashes file
+	/// Attempts to open the {root_path}/file_hasher_files/file_hashes file
 	/// and interprets it as an EDList.
 	/// 
 	/// If it is unable to open the file, it may ask the user
@@ -71,8 +88,8 @@ impl EDList {
 	/// 
 	/// Also writes a backup of the file_hashes file,
 	/// to the file_hash_backups folder, when file_hashes has been read.
-	pub fn open(user_interface: impl UserInterface, banlist: PathBanlist) -> Result<EDList, EDListOpenError> {
-		let file = match File::open("./file_hasher_files/file_hashes") {
+	pub fn open(root_path: &str, user_interface: &impl UserInterface, banlist: PathBanlist) -> Result<EDList, EDListOpenError> {
+		let file = match File::open(format!("{}/file_hasher_files/file_hashes", root_path)) {
 			Ok(file) => file,
 			Err(err) => {
 				loop {
@@ -81,16 +98,16 @@ impl EDList {
 					if answer == "YES" {
 						// Prevent a single pc corruption from jumping to the code where a clean EDList is returned.
 						#[inline(never)]
-						fn create_empty_e_d_list(user_interface: impl UserInterface, banlist: PathBanlist) -> Box<EDList> {
+						fn create_empty_e_d_list(user_interface: &impl UserInterface, root_path:&str, banlist: PathBanlist) -> Box<EDList> {
 							user_interface.send_message("Created empty list");
 							// Using Box such that the returned value from this function will not be valid
 							// in case of the pc jumping to this place from the open method on EDList.
 							// Even if the program should run successfully after making such a jump, it will
 							// write an invalid xor_checksum to the hash_file, which will create an error the
 							// next time the file is opened.
-							Box::new(EDList::new(banlist, Vec::new(), Checksum::default()))
+							Box::new(EDList::new(root_path.to_string(), banlist, Vec::new(), Checksum::default()))
 						}
-						return Ok(*create_empty_e_d_list(user_interface, banlist));
+						return Ok(*create_empty_e_d_list(user_interface, root_path, banlist));
 					}
 					else if answer == "NO" {break;}
 				}
@@ -148,7 +165,7 @@ impl EDList {
 		// By creating the EDList object before comparing xor_checksum with
 		// the one saved in the file_hashes file, we hopefully avoid any optimizations
 		// that would prevent the edlist from using the generated xorchecksum, after comparison.
-		let e_d_list = EDList::new(banlist, e_d_elements, file_xor_checksum);
+		let e_d_list = EDList::new(root_path.to_string(), banlist, e_d_elements, file_xor_checksum);
 
 		// Verifying xor_checksum
 		if e_d_list.xor_checksum != xor_checksum {Err(EDListOpenError::XorChecksumMismatch)?}
@@ -162,8 +179,8 @@ impl EDList {
 	}
 
 	/// Creates a new empty EDList.
-	fn new(banlist: PathBanlist, element_list: Vec<EDElement>, xor_checksum: Checksum) -> EDList {
-		EDList{element_list, banlist, xor_checksum}
+	fn new(root_path: String, banlist: PathBanlist, element_list: Vec<EDElement>, xor_checksum: Checksum) -> EDList {
+		EDList{element_list, banlist, xor_checksum, root_path}
 	}
 
 	/// Tests every element in the lists integrity against
@@ -282,10 +299,7 @@ impl EDList {
 	/// all the errors created when trying to read files.
 	pub fn create(&mut self, user_interface: &impl UserInterface) -> Result<Vec<CreateError>, CreateError> {
 		let mut pending_hashing = Vec::new();
-		let mut existing_paths = std::collections::HashSet::with_capacity(self.element_list.len());
-		for element in &self.element_list {
-			existing_paths.insert(element.get_path());
-		}
+		let existing_paths: std::collections::HashSet<_> = self.element_list.iter().map(|e|e.get_path()).collect();
 
 		let index_strings = self.index(".", user_interface)?;
 
@@ -361,16 +375,16 @@ impl EDList {
 		let mut file_dups:HashMap<Checksum, Vec<&EDElement>> = HashMap::with_capacity(self.element_list.len());
 		for element in &self.element_list {
 			match element.get_variant() {
-				e_d_element::EDVariantFields::File(file) => {
-					match file_dups.entry(file.file_checksum) {
+				e_d_element::EDVariantFields::File{checksum} => {
+					match file_dups.entry(*checksum) {
 						Entry::Occupied(entry) => entry.into_mut().push(element),
 						Entry::Vacant(entry) => {
 							entry.insert(vec!(element));
 						}
 					}
 				},
-				e_d_element::EDVariantFields::Link(link) => {
-					match link_dups.entry(&link.link_target) {
+				e_d_element::EDVariantFields::Link{target} => {
+					match link_dups.entry(target) {
 						Entry::Occupied(entry) => entry.into_mut().push(element),
 						Entry::Vacant(entry) => {
 							entry.insert(vec!(element));
@@ -457,19 +471,19 @@ impl EDList {
 		self.element_list.push(element);
 	}
 
-	/// Write EDList to ./file_hasher_files/file_hashes
+	/// Write EDList to {root_path}/file_hasher_files/file_hashes
 	pub fn write_hash_file(&self) -> Result<(), WriteHashFileError> {
-		let mut file = File::create("./file_hasher_files/file_hashes")
+		let mut file = File::create(format!("{}/file_hasher_files/file_hashes", self.root_path))
 			.map_err(|err|WriteHashFileError::ErrorCreatingFile(err.to_string()))?;
 		self.write_edlist_to_file(&mut file, "file_hashes")?;
 		Ok(())
 	}
 
 	fn write_backup(&self) -> Result<(), WriteBackupError> {
-		const BACKUP_DIR:&str = "./file_hasher_files/hash_file_backups";
-		create_dir_all(BACKUP_DIR).map_err(|err| WriteBackupError::CreateDirectoryError(err.to_string()))?;
+		let backup_dir = format!("{}/file_hasher_files/hash_file_backups", self.root_path);
+		create_dir_all(&backup_dir).map_err(|err| WriteBackupError::CreateDirectoryError(err.to_string()))?;
 		let local: DateTime<Local> = Local::now();
-		let mut file = File::create(format!("{}/{}", BACKUP_DIR, local))
+		let mut file = File::create(format!("{}/{}", backup_dir, local))
 			.map_err(|err| WriteBackupError::CreateFileError(err.to_string()))?;
 		self.write_edlist_to_file(&mut file, "hashbackup")?;
 		Ok(())
@@ -513,37 +527,228 @@ impl EDList {
 	/// This makes it possible to compare to another different
 	/// paths checksum.
 	pub fn relative_checksum(&self, user_interface: &impl UserInterface) {
-		let relative_path = loop {
-			let relative_path = user_interface.get_user_answer("Enter the relative path:");
-			// We should only accept a relative path that ends in a forward slash.
-			if let Some('/') = relative_path.chars().rev().next() {
-				break relative_path;
-			}
-			else {
-				user_interface.send_message("The relative path must end with a forward slash \"/\"");
-			}
-		};
+		let relative_path = shared::get_with_ending_slash(user_interface, "Enter the relative path:");
 
+		if let Some(hash) = self.internal_relative_checksum(relative_path.as_str(), false) {
+			user_interface.send_message(&format!("Relative hash:\n{}", hash));
+		}
+		else {
+			user_interface.send_message("No files were found in the specified path");
+		}
+	}
+
+	fn internal_relative_checksum(&self, relative_path: &str, no_elements_allowed: bool) -> Option<String> {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut elements_found = false;
 		self.element_list.iter()
-		    .filter_map(|e_d_element| try_join!(Some(e_d_element), e_d_element.get_path().strip_prefix(relative_path.as_ref() as &str)))
+		    .filter_map(|e_d_element| try_join!(Some(e_d_element), e_d_element.get_path().strip_prefix(relative_path)))
 		    .for_each(|(e_d_element, postfix)|
 		{
 			elements_found = true;
 			hasher.update(postfix.as_bytes());
 			hasher.update(&e_d_element.get_modified_time().to_le_bytes());
 			match e_d_element.get_variant() {
-				e_d_element::EDVariantFields::File(file) => hasher.update(&file.file_checksum.as_ref()),
-				e_d_element::EDVariantFields::Link(link) => hasher.update(&link.link_target.as_bytes())
+				e_d_element::EDVariantFields::File{checksum} => hasher.update(checksum.as_ref()),
+				e_d_element::EDVariantFields::Link{target} => hasher.update(target.as_bytes())
 			}
 		});
-		if elements_found {
-			user_interface.send_message(&format!("Relative hash:\n{}", shared::blake2_to_string(hasher)));
+		if elements_found || no_elements_allowed { Some(shared::blake2_to_string(hasher)) }
+		else { None }
+	}
+
+	fn internal_negated_relative_checksum(&self, relative_path: &str) -> String {
+		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		self.element_list.iter()
+		    .filter(|e_d_element| e_d_element.get_path().strip_prefix(relative_path).is_none())
+		    .for_each(|e_d_element|
+		{
+			hasher.update(&e_d_element.get_path());
+			hasher.update(&e_d_element.get_modified_time().to_le_bytes());
+			match e_d_element.get_variant() {
+				e_d_element::EDVariantFields::File{checksum} => hasher.update(checksum.as_ref()),
+				e_d_element::EDVariantFields::Link{target} => hasher.update(target.as_bytes())
+			}
+		});
+		shared::blake2_to_string(hasher)
+	}
+
+	/// Deletes all empty folders within the given root directory.
+	/// 
+	/// Ignores folders that is in the given banlist.
+	/// 
+	/// Also tells the user through user_interface, which folders were deleted.
+	fn delete_empty_folders(path: &Path, banlist: &PathBanlist, user_interface: &impl UserInterface) -> Result<bool, SyncFromError> {
+		let mut files_or_banlist_found = false;
+		
+		for entry in std::fs::read_dir(path)? {
+			let entry_path = entry?.path();
+			if entry_path.is_dir() && !banlist.is_in_banlist(&format!("{}/",entry_path.to_str().expect("Folders with non utf-8 names is not supported!"))) {
+				files_or_banlist_found = EDList::delete_empty_folders(&entry_path, banlist, user_interface)? || files_or_banlist_found;
+			}
+			else {files_or_banlist_found = true;}
 		}
-		else {
-			user_interface.send_message("No files were found in the specified path");
+		if !files_or_banlist_found {
+			user_interface.send_message(&format!("Deleting folder {}", path.to_str().unwrap()));
+			std::fs::remove_dir(path)?;
 		}
+		Ok(files_or_banlist_found)
+	}
+
+	/// Executes a list of IO Fileoperations.
+	/// 
+	/// This operation modifies the real Filesystem, so use with care.
+	fn do_file_operations(operations: &[FileOperation], user_interface: &impl UserInterface, backup_folder: &str) -> Result<(), SyncFromError> {
+		use std::fs;
+		use FileOperation::*;
+		use filetime::{set_symlink_file_times, FileTime};
+
+		let operations_length_width = operations.len().to_string().len();
+		let mut synclist = fs::OpenOptions::new().create(true).write(true).append(true).open(format!("{}synclist", backup_folder))?;
+		for operation in operations {
+			let op_string = format!("{}\n", operation);
+			synclist.write_all(op_string.as_bytes())?;
+		};
+
+		for (i, operation) in operations.iter().enumerate() {
+			user_interface.send_message(&format!("operation {:0width$} of {}: {}", i + 1, operations.len(), operation, width=operations_length_width));
+			match operation {
+				Delete(path) => {
+					fs::create_dir_all(format!("{}{}", &backup_folder, Path::new(path).parent().unwrap().to_str().unwrap()))?;
+					fs::rename(path, format!("{}{}", &backup_folder, path))?;
+				},
+				Move{from, to} => {
+					let dir = Path::new(to).parent().ok_or(SyncFromError::GetPathParentError)?;
+					fs::create_dir_all(dir)?;
+					fs::rename(from, to)?;
+				},
+				Copy{from, to} => {
+					let dir = Path::new(to).parent().ok_or(SyncFromError::GetPathParentError)?;
+					fs::create_dir_all(dir)?;
+					let metadata = fs::symlink_metadata(from)?;
+					if metadata.is_file() {
+						std::fs::copy(from, to)?;
+					}
+					else {
+						match fs::read_link(from).unwrap().to_str() {
+							Some(link_path) => {
+								// Create new symbolic link. Won't work on Windows.
+								#[cfg(unix)]
+								std::os::unix::fs::symlink(link_path, to)?;
+								#[cfg(windows)]
+								user_interface.send_message(&format!("Error cloning symbolic link '{}', Symbolic links in Windows are unsupported.", link_path));
+							},
+							None => Err(SyncFromError::InvalidUtf8Link(from.into()))?
+						}
+					}
+					let modified_time = FileTime::from_last_modification_time(&metadata);
+					let created_time = FileTime::from_creation_time(&metadata).unwrap_or_else(FileTime::now);
+					set_symlink_file_times(to, created_time, modified_time)?;
+				}
+			}
+		}
+		Ok(())
+	}
+
+
+	/// Attempts to syncronise another EDLists relative path to the currents relative path
+	/// as given by the user.
+	pub fn sync(&mut self, user_interface: &impl UserInterface) -> Result<(), SyncFromError> {
+		use itertools::{Itertools, Either};
+		use std::mem;
+
+		user_interface.send_message("Warning, this operation can be dangerous to your target directory.\n\
+		                             Should an issue occur the file_hashes list will be backed up in the file_hasher_files directory.\n\
+		                             Deleted files and information about actions done will be placed here as well.\n\
+		                             This also doesn't copy the banlist of the source list.");
+
+		let source_folder_path = shared::get_with_ending_slash(user_interface, "Enter path to other folder indexed by file_hasher:");
+		let mut source_e_d_list = EDList::open(&source_folder_path, &StubUserInterface::new("NO".to_string()), PathBanlist::new_dummy())?;
+		let sync_to_prefix = shared::get_with_ending_slash(user_interface, "Enter relative path from the current edlist, where you will sync to:");
+		let sync_from_prefix = shared::get_with_ending_slash(user_interface, "Enter relative path from the external edlist, where you will sync from");
+		let source_relative_checksum = source_e_d_list.internal_relative_checksum(sync_from_prefix.as_str(), true).unwrap();
+		let target_negated_relative_checksum = self.internal_negated_relative_checksum(sync_to_prefix.as_str());
+		
+		let (target_list, existing_files_vec):(Vec<_>, Vec<_>) = mem::take(&mut self.element_list).into_iter()
+		    .partition_map(|element| {
+				if element.get_path().strip_prefix(sync_to_prefix.as_str()).is_some() {
+					self.xor_checksum ^= element.get_hash();
+					Either::Right(element)
+				}
+				else { Either::Left(element) }
+			});
+		self.element_list = target_list;
+
+		let mut existing_files_map = existing_files_vec.into_iter().fold(HashMap::new(), |mut map:HashMap<_,Vec<_>>, element| {
+			map.entry(element.get_variant().clone()).or_default().push(element);
+			map
+		});
+
+		let source_iter = mem::take(&mut source_e_d_list.element_list)
+			    .into_iter()
+			    .filter(|element| element.get_path().strip_prefix(sync_from_prefix.as_str()).is_some());
+
+		let mut pre_file_operations = Vec::new(); // Moving files before they can be overwritten.
+		let mut post_file_operations = Vec::new();
+		let mut files_moved = false;
+		source_iter.for_each(|mut source_element| {
+			let mut empty_dummy_vec = Vec::new();
+			let existing_files = existing_files_map.get_mut(source_element.get_variant()).unwrap_or(&mut empty_dummy_vec);
+			let exact_match = existing_files.drain_filter(|existing_element| {
+				let prefix_stripped_source = source_element.get_path().strip_prefix(sync_from_prefix.as_str()).unwrap();
+				let prefix_stripped_target = existing_element.get_path().strip_prefix(sync_to_prefix.as_str()).unwrap();
+				// Since paths are unique, there can only be up to one collision.
+				prefix_stripped_source == prefix_stripped_target
+			}).next();
+			if let Some(exact_match) = exact_match {
+				self.add_e_d_element(exact_match);
+			}
+			else {
+				let prefix_stripped_source = source_element.get_path().strip_prefix(sync_from_prefix.as_str()).unwrap();
+				let dest_path = format!("{}{}", sync_to_prefix, prefix_stripped_source);
+				if let Some(mut existing_element) = existing_files.pop() {
+					// File exists in target list, but has a different path.
+					// Move file
+					files_moved = true;
+					let temp_path = format!("{}{}", TMPCOPYDIR, prefix_stripped_source);
+					pre_file_operations.push(FileOperation::Move{from: existing_element.get_path().into(), to:temp_path.clone()});
+					post_file_operations.push(FileOperation::Move{from: temp_path, to: dest_path.clone()});
+					// Modify element
+					existing_element.update_path(dest_path);
+					self.add_e_d_element(existing_element);
+				}
+				else {
+					// Element doesn't exist in target list.
+					// Copy file
+					post_file_operations.push(FileOperation::Copy{from: format!("{}{}", source_folder_path, source_element.get_path()), to: dest_path.clone()});
+					source_element.update_path(dest_path);
+					self.add_e_d_element(source_element);
+				}
+			}
+		});
+
+		// Delete all files left in existing files...
+		existing_files_map.drain().flat_map(|(_, value)| value).for_each(|element| {
+			pre_file_operations.push(FileOperation::Delete(element.take_path()));
+		});
+
+		let target_relative_checksum = self.internal_relative_checksum(sync_to_prefix.as_str(), true).unwrap();
+		let new_target_negated_relative_checksum = self.internal_negated_relative_checksum(sync_to_prefix.as_str());
+
+		if source_relative_checksum != target_relative_checksum || new_target_negated_relative_checksum != target_negated_relative_checksum {
+			return Err(SyncFromError::ChecksumValidationError);
+		}
+
+		let backup_folder = format!("./file_hasher_files/hash_file_backups/syncbackup-{}/", Local::now());
+		std::fs::create_dir_all(&backup_folder)?;
+		
+		EDList::do_file_operations(&pre_file_operations, user_interface, &backup_folder)?;
+		EDList::delete_empty_folders(Path::new("./"), &self.banlist, user_interface)?;
+		EDList::do_file_operations(&post_file_operations, user_interface, &backup_folder)?;
+		EDList::delete_empty_folders(Path::new("./"), &self.banlist, user_interface)?;
+		if files_moved {
+			EDList::delete_empty_folders(Path::new(TMPCOPYDIR), &PathBanlist::new_dummy(), user_interface)?;
+		}
+		Ok(())
 	}
 
 	/// Will perform a benchmark of the hashing performance on the computer

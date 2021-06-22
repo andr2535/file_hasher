@@ -24,3 +24,17 @@ pub trait UserInterface {
 	/// but the user can't reply to it.
 	fn send_message(&self, message: &str);
 }
+pub struct StubUserInterface {
+	answer: String
+}
+impl StubUserInterface {
+	pub fn new(answer: String) -> StubUserInterface {
+		StubUserInterface{answer}
+	}
+}
+impl UserInterface for StubUserInterface {
+	fn get_user_answer(&self, _message: &str) -> String {
+		self.answer.clone()
+	}
+	fn send_message(&self, _message: &str) { }
+}

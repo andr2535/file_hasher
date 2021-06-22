@@ -17,6 +17,8 @@
 
 extern crate blake2;
 
+use crate::UserInterface;
+
 use super::constants::HASH_OUTPUT_LENGTH;
 use self::blake2::{VarBlake2b, digest::VariableOutput};
 use super::Checksum;
@@ -46,4 +48,18 @@ pub fn blake2_to_checksum(hasher: VarBlake2b) -> Option<Checksum> {
 pub fn blake2_to_string(hasher: VarBlake2b) -> String {
 	let hash = blake2_to_checksum(hasher).unwrap();
 	hex::encode_upper(hash.as_ref())
+}
+
+
+pub fn get_with_ending_slash(user_interface: &impl UserInterface, question: &str) -> String {
+	loop {
+		let path = user_interface.get_user_answer(question);
+		// We should only accept a relative path that ends in a forward slash.
+		if let Some('/') = path.chars().rev().next() {
+			break path;
+		}
+		else {
+			user_interface.send_message("The path must end with a forward slash \"/\"");
+		}
+	}
 }
