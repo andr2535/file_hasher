@@ -34,6 +34,12 @@ impl BitXorAssign<&Checksum> for Checksum {
 	}
 }
 
+impl std::fmt::Display for Checksum {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		write!(f, "{}", hex::encode_upper(self.as_ref()))
+	}
+}
+
 impl Deref for Checksum {
 	type Target = ChecksumArray;
 

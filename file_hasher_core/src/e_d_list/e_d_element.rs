@@ -73,7 +73,7 @@ impl EDElement {
 			EDVariantFields::File{checksum} => hasher.update(checksum.as_ref()),
 			EDVariantFields::Link{target} => hasher.update(target.as_bytes())
 		}
-		self.element_hash = shared::blake2_to_checksum(hasher).unwrap();
+		self.element_hash = shared::blake2_to_checksum(hasher);
 	}
 	
 	/// from_path generates an EDElement from a path.
@@ -234,7 +234,7 @@ impl EDElement {
 			hasher.update(&buffer[0..result_size]);
 			if result_size != buffer_size {break;}
 		}
-		Ok(shared::blake2_to_checksum(hasher).unwrap())
+		Ok(shared::blake2_to_checksum(hasher))
 	}
 
 	/// Returns a hash of the entire EDElement.

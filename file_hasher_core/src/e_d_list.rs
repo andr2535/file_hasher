@@ -29,6 +29,7 @@ use blake2::{VarBlake2b, digest::{Update, VariableOutput}};
 use rayon::prelude::*;
 use join::try_join;
 use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap, path::Path};
+use std::fs::canonicalize;
 
 enum ListVersion<'a> {
 	V1_0,
@@ -46,10 +47,12 @@ enum FileOperation {
 impl std::fmt::Display for FileOperation {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		use FileOperation::*;
+		let from_convert = |from| canonicalize(&from).map(|from| from.to_str().unwrap().to_string()).unwrap();
+
 		match self {
 			Delete(path) => write!(f, "Delete {}", path),
-			Move{from, to} => write!(f, "Move {} to {}", from, to),
-			Copy{from, to} => write!(f, "Copy {} to {}", from, to)
+			Move{from, to} => write!(f, "Move {} to {}", from_convert(from), to),
+			Copy{from, to} => write!(f, "Copy {} to {}", from_convert(from), to)
 		}
 	}
 }
@@ -160,7 +163,7 @@ impl EDList {
 			xor_checksum ^= element.get_hash();
 		});
 		hasher.update(file_xor_checksum.as_ref());
-		let final_checksum = shared::blake2_to_string(hasher);
+		let final_checksum = shared::blake2_to_checksum(hasher);
 		
 		// By creating the EDList object before comparing xor_checksum with
 		// the one saved in the file_hashes file, we hopefully avoid any optimizations
@@ -171,7 +174,7 @@ impl EDList {
 		if e_d_list.xor_checksum != xor_checksum {Err(EDListOpenError::XorChecksumMismatch)?}
 
 		// Verifying final_checksum.
-		if file_final_checksum != final_checksum {Err(EDListOpenError::FinChecksumMismatch)?}
+		if file_final_checksum != final_checksum.to_string() {Err(EDListOpenError::FinChecksumMismatch)?}
 		
 		e_d_list.write_backup()?;
 		
@@ -298,16 +301,9 @@ impl EDList {
 	/// When this function returns Ok, it returns a list with
 	/// all the errors created when trying to read files.
 	pub fn create(&mut self, user_interface: &impl UserInterface) -> Result<Vec<CreateError>, CreateError> {
-		let mut pending_hashing = Vec::new();
 		let existing_paths: std::collections::HashSet<_> = self.element_list.iter().map(|e|e.get_path()).collect();
-
-		let index_strings = self.index(".", user_interface)?;
-
-		for string in index_strings {
-			if !existing_paths.contains(string.as_str()) {
-				pending_hashing.push(string);
-			}
-		}
+		let pending_hashing: Vec<_> = self.index(".", user_interface)?.into_iter()
+			.filter(|string| {!existing_paths.contains(string.as_str())}).collect();
 
 		let mut errors: Vec<CreateError> = Vec::new();
 
@@ -503,7 +499,7 @@ impl EDList {
 
 		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
 		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum.as_ref()));
-		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher));
+		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_checksum(hasher));
 
 		let final_string = format!("{}{}{}{}", list_version_string, xor_checksum_string, fin_checksum_string, element_string);
 
@@ -537,7 +533,7 @@ impl EDList {
 		}
 	}
 
-	fn internal_relative_checksum(&self, relative_path: &str, no_elements_allowed: bool) -> Option<String> {
+	fn internal_relative_checksum(&self, relative_path: &str, no_elements_allowed: bool) -> Option<Checksum> {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut elements_found = false;
 		self.element_list.iter()
@@ -552,11 +548,11 @@ impl EDList {
 				e_d_element::EDVariantFields::Link{target} => hasher.update(target.as_bytes())
 			}
 		});
-		if elements_found || no_elements_allowed { Some(shared::blake2_to_string(hasher)) }
+		if elements_found || no_elements_allowed { Some(shared::blake2_to_checksum(hasher)) }
 		else { None }
 	}
 
-	fn internal_negated_relative_checksum(&self, relative_path: &str) -> String {
+	fn internal_negated_relative_checksum(&self, relative_path: &str) -> Checksum {
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 		self.element_list.iter()
 		    .filter(|e_d_element| e_d_element.get_path().strip_prefix(relative_path).is_none())
@@ -569,7 +565,7 @@ impl EDList {
 				e_d_element::EDVariantFields::Link{target} => hasher.update(target.as_bytes())
 			}
 		});
-		shared::blake2_to_string(hasher)
+		shared::blake2_to_checksum(hasher)
 	}
 
 	/// Deletes all empty folders within the given root directory.
@@ -665,6 +661,15 @@ impl EDList {
 		let mut source_e_d_list = EDList::open(&source_folder_path, &StubUserInterface::new("NO".to_string()), PathBanlist::new_dummy())?;
 		let sync_to_prefix = shared::get_with_ending_slash(user_interface, "Enter relative path from the current edlist, where you will sync to:");
 		let sync_from_prefix = shared::get_with_ending_slash(user_interface, "Enter relative path from the external edlist, where you will sync from");
+
+		std::fs::create_dir_all(&sync_to_prefix)?;
+		let user_answer = user_interface.get_user_answer(&format!("Sync from {:?} -> {:?}.\nIs this ok? (YES/NO)", 
+		                                                 canonicalize(format!("{}{}", source_folder_path, sync_from_prefix))?, 
+		                                                 canonicalize(&sync_to_prefix)?));
+		if user_answer != "YES" {
+			return Err(SyncFromError::UserAbort);
+		}
+		
 		let source_relative_checksum = source_e_d_list.internal_relative_checksum(sync_from_prefix.as_str(), true).unwrap();
 		let target_negated_relative_checksum = self.internal_negated_relative_checksum(sync_to_prefix.as_str());
 		
@@ -679,7 +684,7 @@ impl EDList {
 		self.element_list = target_list;
 
 		let mut existing_files_map = existing_files_vec.into_iter().fold(HashMap::new(), |mut map:HashMap<_,Vec<_>>, element| {
-			map.entry(element.get_variant().clone()).or_default().push(element);
+			map.entry((element.get_variant().clone(), element.get_modified_time())).or_default().push(element);
 			map
 		});
 
@@ -692,7 +697,7 @@ impl EDList {
 		let mut files_moved = false;
 		source_iter.for_each(|mut source_element| {
 			let mut empty_dummy_vec = Vec::new();
-			let existing_files = existing_files_map.get_mut(source_element.get_variant()).unwrap_or(&mut empty_dummy_vec);
+			let existing_files = existing_files_map.get_mut(&(source_element.get_variant().clone(), source_element.get_modified_time())).unwrap_or(&mut empty_dummy_vec);
 			let exact_match = existing_files.drain_filter(|existing_element| {
 				let prefix_stripped_source = source_element.get_path().strip_prefix(sync_from_prefix.as_str()).unwrap();
 				let prefix_stripped_target = existing_element.get_path().strip_prefix(sync_to_prefix.as_str()).unwrap();
@@ -735,7 +740,12 @@ impl EDList {
 		let new_target_negated_relative_checksum = self.internal_negated_relative_checksum(sync_to_prefix.as_str());
 
 		if source_relative_checksum != target_relative_checksum || new_target_negated_relative_checksum != target_negated_relative_checksum {
-			return Err(SyncFromError::ChecksumValidationError);
+			return Err(SyncFromError::ChecksumValidationError{
+				source_rel: source_relative_checksum,
+				target_rel: target_relative_checksum,
+				new_negated_rel: new_target_negated_relative_checksum,
+				negated_rel: target_negated_relative_checksum
+			});
 		}
 
 		let backup_folder = format!("./file_hasher_files/hash_file_backups/syncbackup-{}/", Local::now());

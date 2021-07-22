@@ -223,7 +223,8 @@ pub enum SyncFromError {
 	GetPathParentError,
 	IoError(std::io::Error),
 	InvalidUtf8Link(String),
-	ChecksumValidationError
+	ChecksumValidationError{source_rel: Checksum, target_rel: Checksum, negated_rel: Checksum, new_negated_rel: Checksum},
+	UserAbort
 }
 impl std::error::Error for SyncFromError { }
 impl std::fmt::Display for SyncFromError {
@@ -235,7 +236,14 @@ impl std::fmt::Display for SyncFromError {
 			GetPathParentError => write!(f, "Error getting parent of path during move or copy operation"),
 			IoError(err) => write!(f, "IOError During sync FileOperation: {}", err),
 			InvalidUtf8Link(err) => write!(f, "Invalid UTF-8 symbolic link: {}", err),
-			ChecksumValidationError => write!(f, "There was an error validation the sync operations\nPlease restore the latest EDList backup.")
+			ChecksumValidationError{source_rel, target_rel, negated_rel, new_negated_rel} => write!(
+				f, 
+				"There was an error validating the sync operations\n\
+				Please restore the latest EDList backup.\n\
+				Debugging info:\n\
+				source_relative_checksum = {}, source_relative_checksum = {}, \
+				negated_relative_checksum = {}, new_negated_relative_checksum = {}", source_rel, target_rel, negated_rel, new_negated_rel),
+			UserAbort => write!(f, "Operation aborted due to user aborting.")
 		}
 	}
 }

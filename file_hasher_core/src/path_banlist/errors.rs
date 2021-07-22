@@ -1,4 +1,5 @@
 use super::*;
+use shared::Checksum;
 
 #[derive(Debug)]
 pub enum OpenPathBanlistError {
@@ -6,8 +7,8 @@ pub enum OpenPathBanlistError {
     NewPathBanlistError(NewPathBanlistError),
 	DuplicateChecksum,
 	IOError(std::io::Error),
-	InvalidChecksum(String),
-	MissingChecksum(String)
+	InvalidChecksum(Checksum),
+	MissingChecksum(Checksum)
 }
 impl std::error::Error for OpenPathBanlistError { }
 impl std::fmt::Display for OpenPathBanlistError {

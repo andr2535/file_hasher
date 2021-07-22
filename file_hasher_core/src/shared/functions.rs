@@ -26,9 +26,8 @@ use super::Checksum;
 /// Converts a VarBlake2b object into an Option of a HASH_OUTPUT_LENGTH 
 /// length binary array.
 /// 
-/// Returns None if given "hasher" is not initialized with a length
-/// of HASH_OUTPUT_LENGTH.
-pub fn blake2_to_checksum(hasher: VarBlake2b) -> Option<Checksum> {
+/// Panics if "hasher" is not initialized with a length of HASH_OUTPUT_LENGTH
+pub fn blake2_to_checksum(hasher: VarBlake2b) -> Checksum {
 	let mut element_hash = None;
 	hasher.finalize_variable(|res| {
 		if res.len() == HASH_OUTPUT_LENGTH {
@@ -38,18 +37,8 @@ pub fn blake2_to_checksum(hasher: VarBlake2b) -> Option<Checksum> {
 			});
 		}
 	});
-	element_hash
+	element_hash.unwrap()
 }
-
-/// Converts a Blake2b object into a string.
-/// The hash is output in capital hexadecimal letters.
-/// 
-/// Panics if "hasher" is not initialized with a length of HASH_OUTPUT_LENGTH
-pub fn blake2_to_string(hasher: VarBlake2b) -> String {
-	let hash = blake2_to_checksum(hasher).unwrap();
-	hex::encode_upper(hash.as_ref())
-}
-
 
 pub fn get_with_ending_slash(user_interface: &impl UserInterface, question: &str) -> String {
 	loop {

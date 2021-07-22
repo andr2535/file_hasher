@@ -67,7 +67,7 @@ impl PathBanlist {
 		let buf_reader = BufReader::new(file);
 		
 		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
-		let mut checksum: Option<String> = Option::None;
+		let mut file_checksum: Option<String> = Option::None;
 		let mut banned_paths: HashMap<char, CharMapper> = HashMap::new();
 
 		for line in buf_reader.lines() {
@@ -78,8 +78,8 @@ impl PathBanlist {
 					PathBanlist::insert_to_banlist(line.chars(), &mut banned_paths);
 				},
 				LineType::Checksum(value) => {
-					match checksum {
-						None => checksum = Some(value.to_string()),
+					match file_checksum {
+						None => file_checksum = Some(value.to_string()),
 						Some(_val) => {
 							return Err(OpenPathBanlistError::DuplicateChecksum);
 						}
@@ -90,13 +90,13 @@ impl PathBanlist {
 		}
 
 		// Verify checksum validiy against the generated hash.
-		let hash_string = shared::blake2_to_string(hasher);
-		match checksum {
+		let generated_checksum = shared::blake2_to_checksum(hasher);
+		match file_checksum {
 			Some(checksum) => {
-				if hash_string == checksum {Ok(PathBanlist{banned_paths})}
-				else {Err(OpenPathBanlistError::InvalidChecksum(hash_string))}
+				if generated_checksum.to_string() == checksum {Ok(PathBanlist{banned_paths})}
+				else {Err(OpenPathBanlistError::InvalidChecksum(generated_checksum))}
 			},
-			None => {Err(OpenPathBanlistError::MissingChecksum(hash_string))}
+			None => {Err(OpenPathBanlistError::MissingChecksum(generated_checksum))}
 		}
 	}
 	/// Attempts to create a new banlist file.
@@ -109,14 +109,14 @@ impl PathBanlist {
 		let mut file = File::create("./file_hasher_files/banlist").map_err(NewPathBanlistError::CreatingBanlist)?;
 
 		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
-		let def_banned_list = ["./lost+found/", "./.Trash-1000/", "./file_hasher_files/"];
+		let def_banned_list = ["./lost+found", "./.Trash-1000/", "./file_hasher_files/"];
 
 		for string in def_banned_list.iter() {
 			file.write(format!("{}\n", string).as_bytes()).map_err(NewPathBanlistError::WriteFileError)?;
 			hasher.update(string.as_bytes());
 		}
 
-		file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_string(hasher)).as_bytes())
+		file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_checksum(hasher)).as_bytes())
 		    .map_err(NewPathBanlistError::WriteFileError)?;
 		Ok(())
 	}
