@@ -16,7 +16,7 @@
 */
 #![feature(drain_filter)]
 #![allow(clippy::try_err)]
-mod shared;
 pub mod e_d_list;
 pub mod path_banlist;
+mod shared;
 pub use shared::UserInterface;

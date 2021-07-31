@@ -25,16 +25,17 @@ pub trait UserInterface {
 	fn send_message(&self, message: &str);
 }
 pub struct StubUserInterface {
-	answer: String
+	answer: String,
 }
 impl StubUserInterface {
 	pub fn new(answer: String) -> StubUserInterface {
-		StubUserInterface{answer}
+		StubUserInterface { answer }
 	}
 }
 impl UserInterface for StubUserInterface {
 	fn get_user_answer(&self, _message: &str) -> String {
 		self.answer.clone()
 	}
-	fn send_message(&self, _message: &str) { }
+
+	fn send_message(&self, _message: &str) {}
 }

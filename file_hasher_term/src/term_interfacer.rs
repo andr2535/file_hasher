@@ -19,12 +19,12 @@
 /// functions as an intermediary between the user and
 /// the file_hasher modules.
 pub struct UserMessenger {
-	stdin: std::io::Stdin
+	stdin: std::io::Stdin,
 }
 impl UserMessenger {
 	pub fn new() -> UserMessenger {
 		let stdin = std::io::stdin();
-		UserMessenger{stdin}
+		UserMessenger { stdin }
 	}
 }
 
@@ -36,6 +36,7 @@ impl file_hasher_core::UserInterface for UserMessenger {
 		input_string.pop(); // Remove endline char.
 		input_string
 	}
+
 	fn send_message(&self, message: &str) {
 		println!("{}", message);
 	}

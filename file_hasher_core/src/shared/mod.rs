@@ -16,9 +16,9 @@
 */
 
 mod checksum;
+pub mod constants;
 mod functions;
 mod interfacer;
-pub mod constants;
 pub use checksum::Checksum;
 pub use functions::*;
-pub use interfacer::{UserInterface, StubUserInterface};
+pub use interfacer::{StubUserInterface, UserInterface};

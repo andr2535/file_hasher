@@ -17,17 +17,17 @@
 use file_hasher_core::*;
 
 mod term_interfacer;
-use crate::term_interfacer::UserMessenger;
-
 use structopt::StructOpt;
 
-fn handle_error_list(error_list:Vec<impl std::error::Error>, prepend_message:&str, no_errors_message:Option<&str>) {
+use crate::term_interfacer::UserMessenger;
+
+fn handle_error_list(error_list: Vec<impl std::error::Error>, prepend_message: &str, no_errors_message: Option<&str>) {
 	if !error_list.is_empty() {
 		let length = error_list.len();
 		let length_width = length.to_string().chars().count();
 		println!("{}", prepend_message);
 		for (counter, error) in error_list.iter().enumerate() {
-			println!("Error {:0width$} of {}: {}", counter + 1, length, error, width=length_width);
+			println!("Error {:0width$} of {}: {}", counter + 1, length, error, width = length_width);
 		}
 	}
 	else if let Some(no_errors_message) = no_errors_message {
@@ -37,7 +37,7 @@ fn handle_error_list(error_list:Vec<impl std::error::Error>, prepend_message:&st
 
 #[derive(StructOpt)]
 #[structopt(name = "File Hasher", about = "A file hashing program")]
-struct Opts { }
+struct Opts {}
 
 fn main() {
 	let _opts = Opts::from_args();
@@ -47,14 +47,14 @@ fn main() {
 		Err(err) => {
 			println!("Error opening banlist, Error = {}", err);
 			return;
-		}
+		},
 	};
 	let mut edlist = match e_d_list::EDList::open(".", &UserMessenger::new(), banlist) {
 		Ok(list) => list,
 		Err(err) => {
 			println!("Error opening list, err:\n{}", err);
 			return;
-		}
+		},
 	};
 
 
@@ -63,21 +63,22 @@ fn main() {
 	loop {
 		let mut break_bool = true;
 		println!("Enter one of the following operations:");
-		let answer = interfacer.get_user_answer("Create\nVerify\nVerifySub\nDelete\n\
-		                                         Sort\nDuplicates\nRelativeChecksum\nSync\n\
-		                                         Benchmark {optional byte argument}").to_lowercase();
+		let answer = interfacer
+			.get_user_answer(
+				"Create\nVerify\nVerifySub\nDelete\nSort\nDuplicates\nRelativeChecksum\nSync\nBenchmark {optional byte argument}",
+			)
+			.to_lowercase();
 		let mut answer = answer.split(' ');
 		match answer.next().unwrap() {
-			"create" =>
-				match edlist.create(&interfacer) {
-					Ok(err_list) => {
-						handle_error_list(err_list, "There were errors during this create operation:", None);
-					},
-					Err(err) => {
-						println!("Error from edlist.create {}", err);
-						return;
-					}
+			"create" => match edlist.create(&interfacer) {
+				Ok(err_list) => {
+					handle_error_list(err_list, "There were errors during this create operation:", None);
 				},
+				Err(err) => {
+					println!("Error from edlist.create {}", err);
+					return;
+				},
+			},
 			"verify" => handle_error_list(edlist.verify(None, &interfacer), "Errors found:", Some("No errors found!")),
 			"verifysub" => {
 				let prefix = interfacer.get_user_answer("Enter your path prefix");
@@ -87,28 +88,34 @@ fn main() {
 			"sort" => edlist.sort(),
 			"duplicates" => edlist.find_duplicates(&interfacer),
 			"relativechecksum" => edlist.relative_checksum(&interfacer),
-			"sync" => if let Err(err) = edlist.sync(&interfacer) {println!("Error during syncing: {}", err)},
+			"sync" => {
+				if let Err(err) = edlist.sync(&interfacer) {
+					println!("Error during syncing: {}", err)
+				}
+			},
 			"benchmark" => {
-				let argument = answer.next().map(|argument| argument.parse()).unwrap_or(Ok(1024*1024*1024*10));
+				let argument = answer.next().map(|argument| argument.parse()).unwrap_or(Ok(1024 * 1024 * 1024 * 10));
 
 				match argument {
 					Ok(argument) => e_d_list::EDList::benchmark(&interfacer, argument),
 					Err(_) => {
 						println!("Invalid byte argument entered, must be a whole positive number smaller or equal to {}", usize::MAX);
 						break_bool = false;
-					}
+					},
 				}
 			},
 			_ => {
 				break_bool = false;
 				println!("Invalid value entered, try again!");
-			}
+			},
 		}
-		if break_bool {break;}
+		if break_bool {
+			break;
+		}
 	}
 
 	match edlist.write_hash_file() {
 		Ok(()) => (),
-		Err(err) => println!("Error writing EDList to file, {}", err)
+		Err(err) => println!("Error writing EDList to file, {}", err),
 	}
 }

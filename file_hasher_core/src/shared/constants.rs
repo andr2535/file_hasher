@@ -15,11 +15,11 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-pub const HASH_OUTPUT_LENGTH:   usize = 32;
-pub const FIN_CHECKSUM_PREFIX:  &str  = "CHECKSUM = ";
-pub const XOR_CHECKSUM_PREFIX:  &str  = "XORCHECKSUM = ";
+pub const HASH_OUTPUT_LENGTH: usize = 32;
+pub const FIN_CHECKSUM_PREFIX: &str = "CHECKSUM = ";
+pub const XOR_CHECKSUM_PREFIX: &str = "XORCHECKSUM = ";
 
-pub const LIST_VERSION_PREFIX:  &str  = "LISTVERSION = ";
-pub const CURRENT_LIST_VERSION: &str  = "1.1";
+pub const LIST_VERSION_PREFIX: &str = "LISTVERSION = ";
+pub const CURRENT_LIST_VERSION: &str = "1.1";
 
-pub const TMPCOPYDIR:           &str = "./file_hasher_files/tmpcpyfldr/";
+pub const TMPCOPYDIR: &str = "./file_hasher_files/tmpcpyfldr/";

@@ -15,9 +15,21 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use std::{fs::{File, create_dir_all}, io::{BufRead, BufReader, Write}, collections::HashMap};
-use blake2::{VarBlake2b, digest::{Update, VariableOutput}};
-use crate::{shared, shared::UserInterface, shared::constants};
+use std::{
+	collections::HashMap,
+	fs::{create_dir_all, File},
+	io::{BufRead, BufReader, Write},
+};
+
+use blake2::{
+	digest::{Update, VariableOutput},
+	VarBlake2b,
+};
+
+use crate::{
+	shared,
+	shared::{constants, UserInterface},
+};
 
 pub mod errors;
 use errors::*;
@@ -25,23 +37,23 @@ use errors::*;
 enum LineType<'a> {
 	Comment,
 	Checksum(&'a str),
-	BannedPath(&'a str)
+	BannedPath(&'a str),
 }
 
 #[derive(Debug)]
 enum CharMapper {
 	Terminator,
-	More(HashMap<char, CharMapper>)
+	More(HashMap<char, CharMapper>),
 }
 
 /// PathBanlist is a HashSet that contains all the paths that
 /// should not be hashed by the EDList objects.
 #[derive(Debug)]
 pub struct PathBanlist {
-	banned_paths:HashMap<char, CharMapper>
+	banned_paths: HashMap<char, CharMapper>,
 }
 impl PathBanlist {
-	/// Requires an object implementing the trait UserInterface also defined in 
+	/// Requires an object implementing the trait UserInterface also defined in
 	/// this file.
 	/// Attempts to open the banlist file from ./file_hasher_files/banlist
 	/// May use the given object implementing UserInterface, to ask the user to
@@ -51,21 +63,22 @@ impl PathBanlist {
 	pub fn open(banlist_interfacer: &impl UserInterface) -> Result<PathBanlist, OpenPathBanlistError> {
 		let file = match File::open("./file_hasher_files/banlist") {
 			Ok(file) => file,
-			Err(err) => {
-				loop {
-					let create_new = banlist_interfacer.get_user_answer(
-					    &format!("banlist file could not be opened, error message = {}\
-					    \nDo you wish to create a new banlist? YES/NO", err));
-					if create_new == "YES" {
-						PathBanlist::create()?;
-						return PathBanlist::open(banlist_interfacer);
-					}
-					else if create_new == "NO" {return Err(OpenPathBanlistError::UserDeniedNewList);}
+			Err(err) => loop {
+				let create_new = banlist_interfacer.get_user_answer(&format!(
+					"banlist file could not be opened, error message = {}\nDo you wish to create a new banlist? YES/NO",
+					err
+				));
+				if create_new == "YES" {
+					PathBanlist::create()?;
+					return PathBanlist::open(banlist_interfacer);
 				}
-			}
+				else if create_new == "NO" {
+					return Err(OpenPathBanlistError::UserDeniedNewList);
+				}
+			},
 		};
 		let buf_reader = BufReader::new(file);
-		
+
 		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let mut file_checksum: Option<String> = Option::None;
 		let mut banned_paths: HashMap<char, CharMapper> = HashMap::new();
@@ -77,15 +90,13 @@ impl PathBanlist {
 
 					PathBanlist::insert_to_banlist(line.chars(), &mut banned_paths);
 				},
-				LineType::Checksum(value) => {
-					match file_checksum {
-						None => file_checksum = Some(value.to_string()),
-						Some(_val) => {
-							return Err(OpenPathBanlistError::DuplicateChecksum);
-						}
-					}
-				}
-				LineType::Comment => () // Comments are not important to the integrity of the file...
+				LineType::Checksum(value) => match file_checksum {
+					None => file_checksum = Some(value.to_string()),
+					Some(_val) => {
+						return Err(OpenPathBanlistError::DuplicateChecksum);
+					},
+				},
+				LineType::Comment => (), // Comments are not important to the integrity of the file...
 			}
 		}
 
@@ -93,12 +104,17 @@ impl PathBanlist {
 		let generated_checksum = shared::blake2_to_checksum(hasher);
 		match file_checksum {
 			Some(checksum) => {
-				if generated_checksum.to_string() == checksum {Ok(PathBanlist{banned_paths})}
-				else {Err(OpenPathBanlistError::InvalidChecksum(generated_checksum))}
+				if generated_checksum.to_string() == checksum {
+					Ok(PathBanlist { banned_paths })
+				}
+				else {
+					Err(OpenPathBanlistError::InvalidChecksum(generated_checksum))
+				}
 			},
-			None => {Err(OpenPathBanlistError::MissingChecksum(generated_checksum))}
+			None => Err(OpenPathBanlistError::MissingChecksum(generated_checksum)),
 		}
 	}
+
 	/// Attempts to create a new banlist file.
 	/// Requires a object that implements UserInterface, so that it can send it
 	/// on to the open function.
@@ -117,19 +133,20 @@ impl PathBanlist {
 		}
 
 		file.write(format!("{}{}", constants::FIN_CHECKSUM_PREFIX, shared::blake2_to_checksum(hasher)).as_bytes())
-		    .map_err(NewPathBanlistError::WriteFileError)?;
+			.map_err(NewPathBanlistError::WriteFileError)?;
 		Ok(())
 	}
 
 	/// identify_line determines if a line is a comment, a checksum or a banned path.
 	fn identify_line(line: &str) -> LineType {
 		match line.chars().next() {
-			Some(character) => 
+			Some(character) => {
 				if character == '#' {
 					return LineType::Comment;
-				},
+				}
+			},
 			// If the string is empty, it has function like a comment.
-			None => return LineType::Comment
+			None => return LineType::Comment,
 		};
 
 		// Figure out whether line is a checksum.
@@ -140,10 +157,10 @@ impl PathBanlist {
 		// If line is not identified as a comment or a checksum, it must be a bannedpath.
 		LineType::BannedPath(line)
 	}
-	
+
 	/// Used internally by the path_banlist open constructor,
 	/// to insert the needed paths into the banlist.
-	/// 
+	///
 	/// The returned value should be ignored by the caller,
 	/// unless the caller is also insert_to_banlist.
 	fn insert_to_banlist(mut char_iter: std::str::Chars, hashmap: &mut HashMap<char, CharMapper>) -> Option<CharMapper> {
@@ -151,7 +168,7 @@ impl PathBanlist {
 			Some(character) => character,
 			// If line is ended, we make the calling insert_to_banlist
 			// insert a Terminator.
-			None => return Some(CharMapper::Terminator)
+			None => return Some(CharMapper::Terminator),
 		};
 
 		let new_char_mapper = match hashmap.get_mut(&character) {
@@ -168,11 +185,11 @@ impl PathBanlist {
 				// Insert the remaining letters into the newly created hashmap recursively.
 				match PathBanlist::insert_to_banlist(char_iter, &mut new_hashmap) {
 					Some(char_mapper) => Some(char_mapper),
-					None => Some(CharMapper::More(new_hashmap))
+					None => Some(CharMapper::More(new_hashmap)),
 				}
-			}
+			},
 		};
-		
+
 		// Because we build the hashmap from the inside, we will
 		// take the returned CharMapper(if any) from the recursive call
 		// and insert it into the character position in the given hashmap.
@@ -181,7 +198,7 @@ impl PathBanlist {
 		}
 		None
 	}
-	
+
 	/// Used to test whether the given path has any
 	/// of its prefixes defined in the banlist.
 	/// Returns true, if there is such a prefix, else it
@@ -192,7 +209,7 @@ impl PathBanlist {
 			match hashmap.get(&character) {
 				Some(CharMapper::More(next_map)) => hashmap = next_map,
 				Some(CharMapper::Terminator) => return true,
-				None => return false
+				None => return false,
 			}
 		}
 		false
@@ -200,6 +217,6 @@ impl PathBanlist {
 
 	/// Creates a PathBanlist without a backing file.
 	pub(crate) fn new_dummy() -> PathBanlist {
-		PathBanlist{banned_paths: HashMap::new()}
+		PathBanlist { banned_paths: HashMap::new() }
 	}
 }

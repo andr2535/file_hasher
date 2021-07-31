@@ -15,8 +15,9 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use super::constants::HASH_OUTPUT_LENGTH;
 use std::ops::{BitXorAssign, Deref, DerefMut};
+
+use super::constants::HASH_OUTPUT_LENGTH;
 
 type ChecksumArray = [u8; HASH_OUTPUT_LENGTH];
 /// Checksum defines the standard length of any checksums
@@ -25,7 +26,7 @@ type ChecksumArray = [u8; HASH_OUTPUT_LENGTH];
 /// Also defines a set of traits for better ergonomics.
 #[derive(Debug, Eq, PartialEq, std::hash::Hash, Copy, Clone, Default)]
 pub struct Checksum {
-	checksum: ChecksumArray
+	checksum: ChecksumArray,
 }
 
 impl BitXorAssign<&Checksum> for Checksum {
@@ -52,7 +53,6 @@ impl DerefMut for Checksum {
 	fn deref_mut(&mut self) -> &mut ChecksumArray {
 		&mut self.checksum
 	}
-	
 }
 
 impl AsRef<ChecksumArray> for Checksum {

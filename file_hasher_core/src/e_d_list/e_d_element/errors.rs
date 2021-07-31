@@ -8,7 +8,7 @@ pub enum EDElementError {
 	InvalidUtf8Link(String),
 	VerifyLinkPathError(VerifyLinkPathError),
 	VerifyError(EDElementVerifyError),
-	LinkTargetInvalidUtf8(String)
+	LinkTargetInvalidUtf8(String),
 }
 impl Error for EDElementError {}
 impl fmt::Display for EDElementError {
@@ -21,7 +21,7 @@ impl fmt::Display for EDElementError {
 			InvalidUtf8Link(path) => write!(f, "link_path is not a valid utf-8 string!, path to link = {}", path),
 			VerifyLinkPathError(err) => write!(f, "{}", err),
 			VerifyError(err) => write!(f, "{}", err),
-			LinkTargetInvalidUtf8(path) => write!(f, "link_target is not a valid utf-8 string!, path to link = {}", path)
+			LinkTargetInvalidUtf8(path) => write!(f, "link_target is not a valid utf-8 string!, path to link = {}", path),
 		}
 	}
 }
@@ -37,7 +37,9 @@ impl From<EDElementVerifyError> for EDElementError {
 }
 
 #[derive(Debug)]
-pub struct FileHashingError {error: std::io::Error}
+pub struct FileHashingError {
+	error: std::io::Error,
+}
 impl Error for FileHashingError {}
 impl fmt::Display for FileHashingError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -46,14 +48,14 @@ impl fmt::Display for FileHashingError {
 }
 impl From<std::io::Error> for FileHashingError {
 	fn from(error: std::io::Error) -> FileHashingError {
-		FileHashingError{error}
+		FileHashingError { error }
 	}
 }
 
 #[derive(Debug)]
 pub enum VerifyLinkPathError {
 	LinkFileNoParentError(String, String),
-	UnableToOpenLinkTarget(String, String, std::io::Error)
+	UnableToOpenLinkTarget(String, String, std::io::Error),
 }
 impl Error for VerifyLinkPathError {}
 impl fmt::Display for VerifyLinkPathError {
@@ -65,7 +67,7 @@ impl fmt::Display for VerifyLinkPathError {
 			},
 			UnableToOpenLinkTarget(path, link_target, err) => {
 				write!(f, "Error opening file linked to by: '{}', link_target: '{}', error: '{}'", path, link_target, err)
-			}
+			},
 		}
 	}
 }
@@ -79,7 +81,7 @@ pub enum EDElementVerifyError {
 	LinkTargetInvalid(String),
 	LinkTargetInvalidTimeChanged(String),
 	PathIsDirectory(String),
-	TimeChanged(String)
+	TimeChanged(String),
 }
 impl Error for EDElementVerifyError {}
 impl fmt::Display for EDElementVerifyError {
@@ -91,9 +93,11 @@ impl fmt::Display for EDElementVerifyError {
 			InvalidChecksum(path) => write!(f, "File \"{}\" has an invalid checksum", path),
 			LinkTargetValidTimeChanged(path) => write!(f, "Modified time changed on symbolic link \"{}\"", path),
 			LinkTargetInvalid(path) => write!(f, "Link \"{}\", has an invalid target path", path),
-			LinkTargetInvalidTimeChanged(path) => write!(f, "Link \"{}\", has an invalid target path, and it's modified time has changed", path),
+			LinkTargetInvalidTimeChanged(path) => {
+				write!(f, "Link \"{}\", has an invalid target path, and it's modified time has changed", path)
+			},
 			PathIsDirectory(path) => write!(f, "Path \"{}\" is a directory", path),
-			TimeChanged(path) => write!(f, "File with path \"{}\", has a different modified time than expected", path)
+			TimeChanged(path) => write!(f, "File with path \"{}\", has a different modified time than expected", path),
 		}
 	}
 }
@@ -110,7 +114,7 @@ pub enum EDElementParseError {
 	FileHashDecodeError(hex::FromHexError),
 	NoVariantTerminator,
 	InvalidVariantIdentifier,
-	NoTerminatorBracket
+	NoTerminatorBracket,
 }
 impl Error for EDElementParseError {}
 impl fmt::Display for EDElementParseError {
@@ -127,7 +131,7 @@ impl fmt::Display for EDElementParseError {
 			FileHashDecodeError(err) => write!(f, "Error decoding file hash: {}", err),
 			NoVariantTerminator => write!(f, "Missing terminating ')' character after file_hash, or link_target"),
 			InvalidVariantIdentifier => write!(f, "Invalid variant identifier in EDElement string"),
-			NoTerminatorBracket => write!(f, "Missing EDElement terminator bracket")
+			NoTerminatorBracket => write!(f, "Missing EDElement terminator bracket"),
 		}
 	}
 }

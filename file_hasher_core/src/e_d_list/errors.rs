@@ -13,10 +13,9 @@ pub enum EDListOpenError {
 	EDElementParseError(e_d_element::errors::EDElementParseError, usize),
 	XorChecksumMismatch,
 	FinChecksumMismatch,
-	WriteBackupError(WriteBackupError)
-
+	WriteBackupError(WriteBackupError),
 }
-impl std::error::Error for EDListOpenError { }
+impl std::error::Error for EDListOpenError {}
 impl std::fmt::Display for EDListOpenError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use EDListOpenError::*;
@@ -31,7 +30,7 @@ impl std::fmt::Display for EDListOpenError {
 			EDElementParseError(err, i) => write!(f, "Error interpreting EDElement from file_hashes, linecount = {}, err = {}", i + 4, err),
 			XorChecksumMismatch => write!(f, "Mismatch between xor checksum in file and generated xor checksum"),
 			FinChecksumMismatch => write!(f, "Mismatch between final checksum in file and generated final checksum"),
-			WriteBackupError(err) => write!(f, "Error writing backup, err = {}", err)
+			WriteBackupError(err) => write!(f, "Error writing backup, err = {}", err),
 		}
 	}
 }
@@ -65,22 +64,24 @@ impl From<WriteBackupError> for EDListOpenError {
 pub enum UnsupportedEDListVersion {
 	Invalid(String),
 	V1_0,
-	MissingIdentifier
+	MissingIdentifier,
 }
-impl std::error::Error for UnsupportedEDListVersion { }
+impl std::error::Error for UnsupportedEDListVersion {}
 impl std::fmt::Display for UnsupportedEDListVersion {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use UnsupportedEDListVersion::*;
 		match self {
-			Invalid(identifier) => write!(f, "Invalid version identifier \"{}\" in file_hashes,\
-			                                  \nmaybe the file is made by a future version of the program?", 
-			                                  identifier),
-			V1_0 => write!(f, "file_hashes version is 1.0, if you want to update the list,\
-			                   \nyou should use file_hasher V1.0.1"),
-			MissingIdentifier => write!(f, "The list_version identifier is missing from file_hashes.\
-			                                \nThis might mean this file_hashes list is from before V1.0.0.\
-			                                \nIf you want to update the list,\
-			                                use V1.0.0 of this program to update the list to V1.0.")
+			Invalid(identifier) => write!(
+				f,
+				"Invalid version identifier \"{}\" in file_hashes,\nmaybe the file is made by a future version of the program?",
+				identifier
+			),
+			V1_0 => write!(f, "file_hashes version is 1.0, if you want to update the list,\nyou should use file_hasher V1.0.1"),
+			MissingIdentifier => write!(
+				f,
+				"The list_version identifier is missing from file_hashes.\nThis might mean this file_hashes list is from before \
+				 V1.0.0.\nIf you want to update the list,use V1.0.0 of this program to update the list to V1.0."
+			),
 		}
 	}
 }
@@ -88,15 +89,15 @@ impl std::fmt::Display for UnsupportedEDListVersion {
 #[derive(Debug)]
 pub enum VerifyError {
 	PathInBanlist(String),
-	EDElementError(e_d_element::errors::EDElementError)
+	EDElementError(e_d_element::errors::EDElementError),
 }
-impl std::error::Error for VerifyError { }
+impl std::error::Error for VerifyError {}
 impl std::fmt::Display for VerifyError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use VerifyError::*;
 		match self {
 			PathInBanlist(path) => write!(f, "\"{}\" is in the banlist.", path),
-			EDElementError(err) => write!(f, "{}", err)
+			EDElementError(err) => write!(f, "{}", err),
 		}
 	}
 }
@@ -109,15 +110,15 @@ impl From<e_d_element::errors::EDElementError> for VerifyError {
 #[derive(Debug)]
 pub enum CreateError {
 	IndexError(IndexError),
-	EDElementError(e_d_element::errors::EDElementError)
+	EDElementError(e_d_element::errors::EDElementError),
 }
-impl std::error::Error for CreateError { }
+impl std::error::Error for CreateError {}
 impl std::fmt::Display for CreateError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use CreateError::*;
 		match self {
 			IndexError(err) => write!(f, "Error indexing files, Err = {}", err),
-			EDElementError(err) => write!(f, "{}", err)
+			EDElementError(err) => write!(f, "{}", err),
 		}
 	}
 }
@@ -137,17 +138,16 @@ impl From<e_d_element::errors::EDElementError> for CreateError {
 pub enum IndexError {
 	CantGetSubDirError(String, String),
 	IoError(std::io::Error),
-	OsStringConvertError(String)
+	OsStringConvertError(String),
 }
-impl std::error::Error for IndexError { }
+impl std::error::Error for IndexError {}
 impl std::fmt::Display for IndexError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use IndexError::*;
 		match self {
 			CantGetSubDirError(path, err) => write!(f, "Error getting subdirs from dir {}, error = {}", path, err),
 			IoError(err) => write!(f, "IoError during indexing, err = {}", err),
-			OsStringConvertError(path) => write!(f, "Failed to convert OsString to String in path: {}", path)
-
+			OsStringConvertError(path) => write!(f, "Failed to convert OsString to String in path: {}", path),
 		}
 	}
 }
@@ -162,16 +162,16 @@ impl From<std::io::Error> for IndexError {
 pub enum WriteBackupError {
 	CreateDirectoryError(String),
 	CreateFileError(String),
-	WriteEDListToFileError(WriteEDListToFileError)
+	WriteEDListToFileError(WriteEDListToFileError),
 }
-impl std::error::Error for WriteBackupError { }
+impl std::error::Error for WriteBackupError {}
 impl std::fmt::Display for WriteBackupError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use WriteBackupError::*;
 		match self {
 			CreateDirectoryError(err) => write!(f, "Error creating hash_file_backups directory, Error = {}", err),
 			CreateFileError(err) => write!(f, "Error creating backup file, err = {}", err),
-			WriteEDListToFileError(err) => write!(f, "{}", err)
+			WriteEDListToFileError(err) => write!(f, "{}", err),
 		}
 	}
 }
@@ -183,9 +183,9 @@ impl From<WriteEDListToFileError> for WriteBackupError {
 #[derive(Debug)]
 pub enum WriteEDListToFileError {
 	WriteError(String, String),
-	FlushError(String, String)
+	FlushError(String, String),
 }
-impl std::error::Error for WriteEDListToFileError { }
+impl std::error::Error for WriteEDListToFileError {}
 impl std::fmt::Display for WriteEDListToFileError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use WriteEDListToFileError::*;
@@ -198,9 +198,9 @@ impl std::fmt::Display for WriteEDListToFileError {
 #[derive(Debug)]
 pub enum WriteHashFileError {
 	WriteEDListToFileError(WriteEDListToFileError),
-	ErrorCreatingFile(String)
+	ErrorCreatingFile(String),
 }
-impl std::error::Error for WriteHashFileError { }
+impl std::error::Error for WriteHashFileError {}
 impl std::fmt::Display for WriteHashFileError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use WriteHashFileError::*;
@@ -223,10 +223,15 @@ pub enum SyncFromError {
 	GetPathParentError,
 	IoError(std::io::Error),
 	InvalidUtf8Link(String),
-	ChecksumValidationError{source_rel: Checksum, target_rel: Checksum, negated_rel: Checksum, new_negated_rel: Checksum},
-	UserAbort
+	ChecksumValidationError {
+		source_rel:      Checksum,
+		target_rel:      Checksum,
+		negated_rel:     Checksum,
+		new_negated_rel: Checksum,
+	},
+	UserAbort,
 }
-impl std::error::Error for SyncFromError { }
+impl std::error::Error for SyncFromError {}
 impl std::fmt::Display for SyncFromError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		use SyncFromError::*;
@@ -236,14 +241,14 @@ impl std::fmt::Display for SyncFromError {
 			GetPathParentError => write!(f, "Error getting parent of path during move or copy operation"),
 			IoError(err) => write!(f, "IOError During sync FileOperation: {}", err),
 			InvalidUtf8Link(err) => write!(f, "Invalid UTF-8 symbolic link: {}", err),
-			ChecksumValidationError{source_rel, target_rel, negated_rel, new_negated_rel} => write!(
-				f, 
-				"There was an error validating the sync operations\n\
-				Please restore the latest EDList backup.\n\
-				Debugging info:\n\
-				source_relative_checksum = {}, source_relative_checksum = {}, \
-				negated_relative_checksum = {}, new_negated_relative_checksum = {}", source_rel, target_rel, negated_rel, new_negated_rel),
-			UserAbort => write!(f, "Operation aborted due to user aborting.")
+			ChecksumValidationError { source_rel, target_rel, negated_rel, new_negated_rel } => write!(
+				f,
+				"There was an error validating the sync operations\nPlease restore the latest EDList backup.\nDebugging \
+				 info:\nsource_relative_checksum = {}, source_relative_checksum = {}, negated_relative_checksum = {}, \
+				 new_negated_relative_checksum = {}",
+				source_rel, target_rel, negated_rel, new_negated_rel
+			),
+			UserAbort => write!(f, "Operation aborted due to user aborting."),
 		}
 	}
 }
