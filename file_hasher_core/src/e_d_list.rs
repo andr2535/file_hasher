@@ -58,7 +58,11 @@ enum FileOperation {
 impl std::fmt::Display for FileOperation {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		use FileOperation::*;
-		let from_convert = |from| canonicalize(&from).map(|from| from.to_str().unwrap().to_string()).unwrap();
+		let from_convert = |from| {
+			canonicalize(&from)
+				.map(|from| from.to_str().unwrap().to_string())
+				.unwrap_or(format!("'''Error getting canonical path of {}'''", from))
+		};
 
 		match self {
 			Delete(path) => write!(f, "Delete {}", path),
@@ -136,12 +140,7 @@ impl EDList {
 		let mut lines = BufReader::new(file).lines().collect::<Result<Vec<_>, _>>()?.into_iter();
 
 		let (version_line, xor_checksum_line, fin_checksum_line) =
-			if let Some((version_line, xor_checksum_line, fin_checksum_line)) = try_join!(lines.next(), lines.next(), lines.next()) {
-				(version_line, xor_checksum_line, fin_checksum_line)
-			}
-			else {
-				return Err(EDListOpenError::ChecksumsMissingError);
-			};
+			try_join!(lines.next(), lines.next(), lines.next()).ok_or(EDListOpenError::ChecksumsMissingError)?;
 
 		// Handling list version.
 		match EDList::get_version_from_line(version_line.as_ref()) {
@@ -162,21 +161,12 @@ impl EDList {
 		};
 
 		// Parsing file_final_checksum
-		let file_final_checksum = {
-			if let Some(fin_checksum_string) = fin_checksum_line.strip_prefix(FIN_CHECKSUM_PREFIX) {
-				fin_checksum_string
-			}
-			else {
-				Err(EDListOpenError::InvalidFinChecksum)?
-			}
-		};
+		let file_final_checksum = fin_checksum_line.strip_prefix(FIN_CHECKSUM_PREFIX).ok_or(EDListOpenError::InvalidFinChecksum)?;
 		let mut xor_checksum = Checksum::default();
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		// Parsing all EDElements.
 		let e_d_elements = lines
-			.collect::<Vec<_>>()
-			.par_iter()
 			.enumerate()
 			.map(|(i, line)| EDElement::try_from(line.as_ref()).map_err(|err| (err, i)))
 			.collect::<Result<Vec<_>, _>>()?;

@@ -1,15 +1,15 @@
 [package]
 name = "file_hasher_core"
-version = "1.1.1"
+version = "1.1.2"
 authors = ["Andreas Ejdesgaard <andreasejdesgaard@protonmail.com>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-blake2 = "0.9.1"
+blake2 = "0.9.2"
 chrono = "0.4.19"
 hex = "0.4.3"
 rayon = "1.5.1"
 join = "0.3.0"
 itertools = "0.10.1"
-filetime = "0.2.14"
+filetime = "0.2.15"
