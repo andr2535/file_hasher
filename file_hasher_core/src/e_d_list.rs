@@ -89,7 +89,7 @@ impl std::fmt::Display for FileOperation {
 /// file. Also the saved checksum is used in the memory,
 /// such that it is very hard for a memory error to cause
 /// data corruption in the file after a reload.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EDList {
 	element_list: Vec<EDElement>,
 	banlist:      PathBanlist,
@@ -738,6 +738,8 @@ impl EDList {
 		if user_answer != "YES" {
 			return Err(SyncFromError::UserAbort);
 		}
+		let target_element_list_backup = self.element_list.clone();
+		let target_xor_checksum_backup = self.xor_checksum;
 
 		let source_relative_checksum = source_e_d_list.internal_relative_checksum(sync_from_prefix.as_str(), true).unwrap();
 		let target_negated_relative_checksum = self.internal_negated_relative_checksum(sync_to_prefix.as_str());
@@ -825,6 +827,23 @@ impl EDList {
 				negated_rel:     target_negated_relative_checksum,
 			});
 		}
+
+		user_interface.send_message("These operations will be done:");
+		let print_operation = |operation: &FileOperation| user_interface.send_message(&operation.to_string());
+		pre_file_operations.iter().for_each(print_operation);
+		post_file_operations.iter().for_each(print_operation);
+		loop {
+			match user_interface.get_user_answer("Do you want to continue? yes/no").to_lowercase().as_str() {
+				"yes" => break,
+				"no" => {
+					self.element_list = target_element_list_backup;
+					self.xor_checksum = target_xor_checksum_backup;
+					return Err(SyncFromError::UserAbort);
+				},
+				_ => (),
+			}
+		}
+
 
 		let backup_folder = format!("./file_hasher_files/hash_file_backups/syncbackup-{}/", Local::now());
 		std::fs::create_dir_all(&backup_folder)?;

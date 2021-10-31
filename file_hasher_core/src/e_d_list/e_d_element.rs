@@ -55,7 +55,7 @@ pub enum EDVariantFields {
 /// the EDElement object.
 /// element_hash should never be identical between two different
 /// EDElement objects, even if they have the same file_hash.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EDElement {
 	path:           String,
 	modified_time:  u64,

@@ -40,7 +40,7 @@ enum LineType<'a> {
 	BannedPath(&'a str),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum CharMapper {
 	Terminator,
 	More(HashMap<char, CharMapper>),
@@ -48,7 +48,7 @@ enum CharMapper {
 
 /// PathBanlist is a HashSet that contains all the paths that
 /// should not be hashed by the EDList objects.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PathBanlist {
 	banned_paths: HashMap<char, CharMapper>,
 }

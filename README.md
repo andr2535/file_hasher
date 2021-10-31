@@ -24,6 +24,8 @@ dpkg -i debfilename.deb
 
 #### Install using Cargo
 
+For now File_hasher requires nightly builds of the rust compiler.
+
 ```
 cargo install --path ./file_hasher_term/
 ```
