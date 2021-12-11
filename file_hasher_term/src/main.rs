@@ -64,9 +64,10 @@ fn main() {
 		let mut break_bool = true;
 		println!("Enter one of the following operations:");
 		let answer = interfacer
-			.get_user_answer(
+			.get_user_answer::<AnyString>(
 				"Create\nVerify\nVerifySub\nDelete\nSort\nDuplicates\nRelativeChecksum\nSync\nBenchmark {optional byte argument}",
 			)
+			.string
 			.to_lowercase();
 		let mut answer = answer.split(' ');
 		match answer.next().unwrap() {
@@ -81,7 +82,7 @@ fn main() {
 			},
 			"verify" => handle_error_list(edlist.verify(None, &interfacer), "Errors found:", Some("No errors found!")),
 			"verifysub" => {
-				let prefix = interfacer.get_user_answer("Enter your path prefix");
+				let prefix = interfacer.get_user_answer::<SlashEnding>("Enter your path prefix").path;
 				handle_error_list(edlist.verify(Some(&prefix), &interfacer), "Errors found:", Some("No errors found!"));
 			},
 			"delete" => edlist.delete(&interfacer),

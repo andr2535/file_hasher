@@ -103,8 +103,8 @@ impl EDElement {
 
 		if metadata.is_file() {
 			// The path is a file.
-			let file = File::open(&path).map_err(|err| EDElementError::OpenFileError(path.to_string(), err))?;
-			let checksum = EDElement::hash_file(file).map_err(|err| EDElementError::FileHashingError(path.to_string(), err))?;
+			let mut file = File::open(&path).map_err(|err| EDElementError::OpenFileError(path.to_string(), err))?;
+			let checksum = EDElement::hash_file(&mut file).map_err(|err| EDElementError::FileHashingError(path.to_string(), err))?;
 			let file_fields = EDVariantFields::File { checksum };
 			Ok(EDElement::from_internal(path, modified_time, file_fields))
 		}
@@ -113,7 +113,7 @@ impl EDElement {
 			match fs::read_link(&path).unwrap().to_str() {
 				Some(link_path) => {
 					// Verify that the link path exists.
-					EDElement::verify_link_path(&path, &link_path)?;
+					EDElement::verify_link_path(&path, link_path)?;
 					let link_fields = EDVariantFields::Link { target: link_path.to_string() };
 					Ok(EDElement::from_internal(path, modified_time, link_fields))
 				},
@@ -172,8 +172,9 @@ impl EDElement {
 
 		match &self.variant_fields {
 			EDVariantFields::File { checksum } => {
-				let file = File::open(&self.path).map_err(|err| EDElementError::OpenFileError(self.path.to_owned(), err))?;
-				let file_hash = EDElement::hash_file(file).map_err(|err| EDElementError::FileHashingError(self.path.to_owned(), err))?;
+				let mut file = File::open(&self.path).map_err(|err| EDElementError::OpenFileError(self.path.to_owned(), err))?;
+				let file_hash =
+					EDElement::hash_file(&mut file).map_err(|err| EDElementError::FileHashingError(self.path.to_owned(), err))?;
 				if file_hash == *checksum {
 					if time_changed {
 						Err(EDElementVerifyError::TimeChangedButFileCorrectError(self.path.to_owned()))?
@@ -236,7 +237,7 @@ impl EDElement {
 	/// u8 vector, of length HASH_OUTPUT_LENGTH.
 	/// If there is trouble reading the file, we will return
 	/// the error given.
-	pub fn hash_file(mut file: impl Read) -> Result<Checksum, FileHashingError> {
+	pub fn hash_file(file: &mut dyn Read) -> Result<Checksum, FileHashingError> {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
 		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();

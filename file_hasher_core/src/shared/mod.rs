@@ -21,4 +21,4 @@ mod functions;
 mod interfacer;
 pub use checksum::Checksum;
 pub use functions::*;
-pub use interfacer::{StubUserInterface, UserInterface};
+pub use interfacer::{AnyString, InterfacerReturnType, SlashEnding, StubUserInterface, UserInterface, YesNo, YesNoAuto};

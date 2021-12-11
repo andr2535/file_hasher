@@ -15,6 +15,8 @@
 	along with file_hasher.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use file_hasher_core::*;
+
 /// UserMessenger is named Messenger, because it
 /// functions as an intermediary between the user and
 /// the file_hasher modules.
@@ -28,13 +30,32 @@ impl UserMessenger {
 	}
 }
 
-impl file_hasher_core::UserInterface for UserMessenger {
-	fn get_user_answer(&self, message: &str) -> String {
-		println!("{}", message);
+impl UserInterface for UserMessenger {
+	fn get_user_answer<T: TryFrom<String> + InterfacerReturnType>(&self, message: &str) -> T
+	where <T as TryFrom<String>>::Error: std::fmt::Display {
 		let mut input_string = String::new();
-		self.stdin.read_line(&mut input_string).expect("Error reading user input");
-		input_string.pop(); // Remove endline char.
-		input_string
+		loop {
+			print!("{} ", message);
+			if let Some(valid_values) = T::valid_answers() {
+				let mut print_string = String::new();
+				for value in valid_values {
+					print_string.push_str(value);
+					print_string.push('/');
+				}
+				print_string.pop();
+				print!("{}", print_string);
+			}
+			println!();
+			self.stdin.read_line(&mut input_string).expect("Error reading user input");
+			input_string.pop(); // Remove endline char.
+
+			match T::try_from(input_string.clone()) {
+				Ok(res) => return res,
+				Err(err) => println!("{}", err),
+			}
+
+			input_string.clear();
+		}
 	}
 
 	fn send_message(&self, message: &str) {

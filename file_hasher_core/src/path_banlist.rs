@@ -28,7 +28,7 @@ use blake2::{
 
 use crate::{
 	shared,
-	shared::{constants, UserInterface},
+	shared::{constants, UserInterface, YesNo},
 };
 
 pub mod errors;
@@ -64,15 +64,15 @@ impl PathBanlist {
 		let file = match File::open("./file_hasher_files/banlist") {
 			Ok(file) => file,
 			Err(err) => loop {
-				let create_new = banlist_interfacer.get_user_answer(&format!(
-					"banlist file could not be opened, error message = {}\nDo you wish to create a new banlist? YES/NO",
+				let create_new: YesNo = banlist_interfacer.get_user_answer(&format!(
+					"banlist file could not be opened, error message = {}\nDo you wish to create a new banlist?",
 					err
 				));
-				if create_new == "YES" {
+				if create_new == YesNo::Yes {
 					PathBanlist::create()?;
 					return PathBanlist::open(banlist_interfacer);
 				}
-				else if create_new == "NO" {
+				else if create_new == YesNo::No {
 					return Err(OpenPathBanlistError::UserDeniedNewList);
 				}
 			},

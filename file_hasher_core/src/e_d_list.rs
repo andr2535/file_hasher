@@ -39,7 +39,7 @@ use self::e_d_element::EDElement;
 use super::{
 	path_banlist::PathBanlist,
 	shared,
-	shared::{constants::*, Checksum, StubUserInterface, UserInterface},
+	shared::{constants::*, Checksum, SlashEnding, StubUserInterface, UserInterface, YesNo, YesNoAuto},
 };
 
 enum ListVersion<'a> {
@@ -110,30 +110,25 @@ impl EDList {
 		let file = match File::open(format!("{}/file_hasher_files/file_hashes", root_path)) {
 			Ok(file) => file,
 			Err(err) => {
-				loop {
-					let answer = user_interface
-						.get_user_answer(&format!("Could not open file_hashes, err = {}\nDo you wish to create a new file? YES/NO", err));
-					if answer == "YES" {
-						// Prevent a single pc corruption from jumping to the code where a clean EDList is returned.
-						#[inline(never)]
-						fn create_empty_e_d_list(
-							user_interface: &impl UserInterface, root_path: &str, banlist: PathBanlist,
-						) -> Box<EDList> {
-							user_interface.send_message("Created empty list");
-							// Using Box such that the returned value from this function will not be valid
-							// in case of the pc jumping to this place from the open method on EDList.
-							// Even if the program should run successfully after making such a jump, it will
-							// write an invalid xor_checksum to the hash_file, which will create an error the
-							// next time the file is opened.
-							Box::new(EDList::new(root_path.to_string(), banlist, Vec::new(), Checksum::default()))
-						}
-						return Ok(*create_empty_e_d_list(user_interface, root_path, banlist));
+				let answer: YesNo = user_interface
+					.get_user_answer(&format!("Could not open file_hashes, err = {}\nDo you wish to create a new file?", err));
+				if answer == YesNo::Yes {
+					// Prevent a single pc corruption from jumping to the code where a clean EDList is returned.
+					#[inline(never)]
+					fn create_empty_e_d_list(user_interface: &impl UserInterface, root_path: &str, banlist: PathBanlist) -> Box<EDList> {
+						user_interface.send_message("Created empty list");
+						// Using Box such that the returned value from this function will not be valid
+						// in case of the pc jumping to this place from the open method on EDList.
+						// Even if the program should run successfully after making such a jump, it will
+						// write an invalid xor_checksum to the hash_file, which will create an error the
+						// next time the file is opened.
+						Box::new(EDList::new(root_path.to_string(), banlist, Vec::new(), Checksum::default()))
 					}
-					else if answer == "NO" {
-						break;
-					}
+					return Ok(*create_empty_e_d_list(user_interface, root_path, banlist));
 				}
-				return Err(EDListOpenError::CouldNotOpenFileHashesFile);
+				else {
+					return Err(EDListOpenError::CouldNotOpenFileHashesFile);
+				}
 			},
 		};
 
@@ -167,6 +162,8 @@ impl EDList {
 
 		// Parsing all EDElements.
 		let e_d_elements = lines
+			.collect::<Vec<_>>()
+			.into_par_iter()
 			.enumerate()
 			.map(|(i, line)| EDElement::try_from(line.as_ref()).map_err(|err| (err, i)))
 			.collect::<Result<Vec<_>, _>>()?;
@@ -258,7 +255,7 @@ impl EDList {
 		let old_list = std::mem::replace(&mut self.element_list, Vec::with_capacity(old_list_len));
 		let new_list = &mut self.element_list;
 
-		let mut cont_delete = false;
+		let mut auto_action: Option<YesNo> = None;
 		let mut deleted_paths: Vec<String> = Vec::new();
 
 		let xor_checksum = &mut self.xor_checksum;
@@ -283,23 +280,20 @@ impl EDList {
 			}
 			match error {
 				None => new_list.push(e_d_element),
-				Some(err) => loop {
-					if cont_delete {
-						delete_element(e_d_element);
-						break;
+				Some(err) => {
+					let answer = if let Some(auto_value) = auto_action {
+						auto_value
 					}
-					let answer = user_interface.get_user_answer(&format!("{}\nDo you wish to delete this path? yes/no/contyes", err));
-					match answer.to_lowercase().as_str() {
-						"yes" => {
-							delete_element(e_d_element);
-							break;
-						},
-						"no" => {
-							new_list.push(e_d_element);
-							break;
-						},
-						"contyes" => cont_delete = true,
-						_ => (),
+					else {
+						let answer: YesNoAuto = user_interface.get_user_answer(&format!("{}\nDo you wish to delete this path?", err));
+						if let YesNoAuto::Continued(auto_value) = answer {
+							auto_action = Some(auto_value);
+						}
+						answer.get_yesno_val()
+					};
+					match answer {
+						YesNo::Yes => delete_element(e_d_element),
+						YesNo::No => new_list.push(e_d_element),
 					}
 				},
 			}
@@ -568,7 +562,7 @@ impl EDList {
 	/// This makes it possible to compare to another different
 	/// paths checksum.
 	pub fn relative_checksum(&self, user_interface: &impl UserInterface) {
-		let relative_path = shared::get_with_ending_slash(user_interface, "Enter the relative path:");
+		let SlashEnding { path: relative_path } = user_interface.get_user_answer("Enter the relative path:");
 
 		if let Some(hash) = self.internal_relative_checksum(relative_path.as_str(), false) {
 			user_interface.send_message(&format!("Relative hash:\n{}", hash));
@@ -722,20 +716,20 @@ impl EDList {
 			 well.\nThis also doesn't copy the banlist of the source list.",
 		);
 
-		let source_folder_path = shared::get_with_ending_slash(user_interface, "Enter path to other folder indexed by file_hasher:");
+		let SlashEnding { path: source_folder_path } = user_interface.get_user_answer("Enter path to other folder indexed by file_hasher:");
 		let mut source_e_d_list = EDList::open(&source_folder_path, &StubUserInterface::new("NO".to_string()), PathBanlist::new_dummy())?;
-		let sync_to_prefix =
-			shared::get_with_ending_slash(user_interface, "Enter relative path from the current edlist, where you will sync to:");
-		let sync_from_prefix =
-			shared::get_with_ending_slash(user_interface, "Enter relative path from the external edlist, where you will sync from");
+		let SlashEnding { path: sync_to_prefix } =
+			user_interface.get_user_answer("Enter relative path from the current edlist, where you will sync to:");
+		let SlashEnding { path: sync_from_prefix } =
+			user_interface.get_user_answer("Enter relative path from the external edlist, where you will sync from");
 
 		std::fs::create_dir_all(&sync_to_prefix)?;
-		let user_answer = user_interface.get_user_answer(&format!(
-			"Sync from {:?} -> {:?}.\nIs this ok? (YES/NO)",
+		let user_answer: YesNo = user_interface.get_user_answer(&format!(
+			"Sync from {:?} -> {:?}.\nIs this ok?",
 			canonicalize(format!("{}{}", source_folder_path, sync_from_prefix))?,
 			canonicalize(&sync_to_prefix)?
 		));
-		if user_answer != "YES" {
+		if user_answer == YesNo::No {
 			return Err(SyncFromError::UserAbort);
 		}
 		let target_element_list_backup = self.element_list.clone();
@@ -832,18 +826,12 @@ impl EDList {
 		let print_operation = |operation: &FileOperation| user_interface.send_message(&operation.to_string());
 		pre_file_operations.iter().for_each(print_operation);
 		post_file_operations.iter().for_each(print_operation);
-		loop {
-			match user_interface.get_user_answer("Do you want to continue? yes/no").to_lowercase().as_str() {
-				"yes" => break,
-				"no" => {
-					self.element_list = target_element_list_backup;
-					self.xor_checksum = target_xor_checksum_backup;
-					return Err(SyncFromError::UserAbort);
-				},
-				_ => (),
-			}
-		}
 
+		if user_interface.get_user_answer::<YesNo>("Do you want to continue?") == YesNo::No {
+			self.element_list = target_element_list_backup;
+			self.xor_checksum = target_xor_checksum_backup;
+			return Err(SyncFromError::UserAbort);
+		}
 
 		let backup_folder = format!("./file_hasher_files/hash_file_backups/syncbackup-{}/", Local::now());
 		std::fs::create_dir_all(&backup_folder)?;
@@ -858,7 +846,7 @@ impl EDList {
 		Ok(())
 	}
 
-	/// Will perform a benchmark of the hashing performance on the computer
+	/// Performs a benchmark of the hashing performance of the computer
 	/// running it.
 	///
 	/// Will not modify the contents of the EDList at all.
@@ -879,14 +867,14 @@ impl EDList {
 			}
 		}
 
-		let mock_file = ReadMock { bytes_left: bytes };
+		let mut mock_file = ReadMock { bytes_left: bytes };
 		user_interface.send_message("Now benchmarking...");
 
 		let before = std::time::Instant::now();
-		let checksum = EDElement::hash_file(mock_file).unwrap();
+		let checksum = EDElement::hash_file(&mut mock_file).unwrap();
 		let time_elapsed_sec = before.elapsed().as_secs_f64();
 
-		user_interface.send_message(&format!("resulting hash = {:?}", checksum));
+		user_interface.send_message(&format!("resulting hash = {}", checksum));
 
 		let units = ["Bytes", "KiB", "MiB", "GiB"];
 
