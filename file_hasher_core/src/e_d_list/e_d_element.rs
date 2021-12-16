@@ -19,7 +19,7 @@ use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 
 use blake2::{
 	digest::{Update, VariableOutput},
-	VarBlake2b,
+	Blake2bVar,
 };
 use hex::decode_to_slice;
 
@@ -72,9 +72,9 @@ impl EDElement {
 	}
 
 	fn calculate_hash(&mut self) {
-		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(HASH_OUTPUT_LENGTH).unwrap();
 		hasher.update(self.path.as_bytes());
-		hasher.update(self.modified_time.to_le_bytes());
+		hasher.update(&self.modified_time.to_le_bytes());
 		match &self.variant_fields {
 			EDVariantFields::File { checksum } => hasher.update(checksum.as_ref()),
 			EDVariantFields::Link { target } => hasher.update(target.as_bytes()),
@@ -240,7 +240,7 @@ impl EDElement {
 	pub fn hash_file(file: &mut dyn Read) -> Result<Checksum, FileHashingError> {
 		let buffer_size = 40 * 1024 * 1024; // Buffer_size = 40MB
 		let mut buffer = vec![0u8; buffer_size];
-		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(HASH_OUTPUT_LENGTH).unwrap();
 		loop {
 			let result_size = file.read(&mut buffer)?;
 			hasher.update(&buffer[0..result_size]);
@@ -390,7 +390,7 @@ impl std::fmt::Display for EDElement {
 		write!(
 			f,
 			"[{},{},{}]",
-			self.path.replace(r"\", r"\\").replace(",", r"\,"),
+			self.path.replace(r"\", r"\\").replace(',', r"\,"),
 			self.modified_time,
 			variant_fields
 		)

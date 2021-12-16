@@ -17,22 +17,15 @@
 
 extern crate blake2;
 
-use self::blake2::{digest::VariableOutput, VarBlake2b};
-use super::{constants::HASH_OUTPUT_LENGTH, Checksum};
+use self::blake2::{digest::VariableOutput, Blake2bVar};
+use super::Checksum;
 
 /// Converts a VarBlake2b object into an Option of a HASH_OUTPUT_LENGTH
 /// length binary array.
 ///
 /// Panics if "hasher" is not initialized with a length of HASH_OUTPUT_LENGTH
-pub fn blake2_to_checksum(hasher: VarBlake2b) -> Checksum {
-	let mut element_hash = None;
-	hasher.finalize_variable(|res| {
-		if res.len() == HASH_OUTPUT_LENGTH {
-			element_hash = Some(Checksum::default()).map(|mut checksum| {
-				checksum.iter_mut().zip(res).for_each(|(dest, src)| *dest = *src);
-				checksum
-			});
-		}
-	});
-	element_hash.unwrap()
+pub fn blake2_to_checksum(hasher: Blake2bVar) -> Checksum {
+	let mut element_hash = Checksum::default();
+	hasher.finalize_variable(&mut *element_hash).unwrap();
+	element_hash
 }

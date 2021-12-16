@@ -23,7 +23,7 @@ use std::{
 
 use blake2::{
 	digest::{Update, VariableOutput},
-	VarBlake2b,
+	Blake2bVar,
 };
 
 use crate::{
@@ -79,7 +79,7 @@ impl PathBanlist {
 		};
 		let buf_reader = BufReader::new(file);
 
-		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let mut file_checksum: Option<String> = Option::None;
 		let mut banned_paths: HashMap<char, CharMapper> = HashMap::new();
 
@@ -124,7 +124,7 @@ impl PathBanlist {
 		create_dir_all("./file_hasher_files").map_err(NewPathBanlistError::CreatingFileHasherDir)?;
 		let mut file = File::create("./file_hasher_files/banlist").map_err(NewPathBanlistError::CreatingBanlist)?;
 
-		let mut hasher = VarBlake2b::new(constants::HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(constants::HASH_OUTPUT_LENGTH).unwrap();
 		let def_banned_list = ["./lost+found", "./.Trash-1000/", "./file_hasher_files/"];
 
 		for string in def_banned_list.iter() {

@@ -28,7 +28,7 @@ use std::{
 
 use blake2::{
 	digest::{Update, VariableOutput},
-	VarBlake2b,
+	Blake2bVar,
 };
 use chrono::prelude::{DateTime, Local};
 use errors::*;
@@ -158,7 +158,7 @@ impl EDList {
 		// Parsing file_final_checksum
 		let file_final_checksum = fin_checksum_line.strip_prefix(FIN_CHECKSUM_PREFIX).ok_or(EDListOpenError::InvalidFinChecksum)?;
 		let mut xor_checksum = Checksum::default();
-		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(HASH_OUTPUT_LENGTH).unwrap();
 
 		// Parsing all EDElements.
 		let e_d_elements = lines
@@ -527,14 +527,14 @@ impl EDList {
 	/// Used when we need to write hash_file data to a file
 	/// Also used for writing the backups to file.
 	fn write_edlist_to_file(&self, file: &mut File, file_name: &str) -> Result<(), WriteEDListToFileError> {
-		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut element_string = String::new();
 
 		for element in &self.element_list {
 			element_string.push_str(format!("{}\n", element).as_ref());
 			hasher.update(element.get_hash().as_ref());
 		}
-		hasher.update(&self.xor_checksum.as_ref());
+		hasher.update(self.xor_checksum.as_ref());
 
 		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
 		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum.as_ref()));
@@ -573,7 +573,7 @@ impl EDList {
 	}
 
 	fn internal_relative_checksum(&self, relative_path: &str, no_elements_allowed: bool) -> Option<Checksum> {
-		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(HASH_OUTPUT_LENGTH).unwrap();
 		let mut elements_found = false;
 		self.element_list
 			.iter()
@@ -591,12 +591,12 @@ impl EDList {
 	}
 
 	fn internal_negated_relative_checksum(&self, relative_path: &str) -> Checksum {
-		let mut hasher = VarBlake2b::new(HASH_OUTPUT_LENGTH).unwrap();
+		let mut hasher = Blake2bVar::new(HASH_OUTPUT_LENGTH).unwrap();
 		self.element_list
 			.iter()
 			.filter(|e_d_element| e_d_element.get_path().strip_prefix(relative_path).is_none())
 			.for_each(|e_d_element| {
-				hasher.update(&e_d_element.get_path());
+				hasher.update(e_d_element.get_path().as_bytes());
 				hasher.update(&e_d_element.get_modified_time().to_le_bytes());
 				match e_d_element.get_variant() {
 					e_d_element::EDVariantFields::File { checksum } => hasher.update(checksum.as_ref()),

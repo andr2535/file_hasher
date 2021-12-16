@@ -26,7 +26,7 @@ pub trait UserInterface {
 	/// Gives the message to the user, and returns
 	/// the users answer to the caller without the
 	/// endline character.
-	fn get_user_answer<T: TryFrom<String> + InterfacerReturnType>(&self, message: &str) -> T
+	fn get_user_answer<T: InterfacerReturnType>(&self, message: &str) -> T
 	where <T as TryFrom<String>>::Error: std::fmt::Display;
 
 	/// Gives a message, that should be shown to the user,
@@ -42,7 +42,7 @@ impl StubUserInterface {
 	}
 }
 impl UserInterface for StubUserInterface {
-	fn get_user_answer<T: TryFrom<String> + InterfacerReturnType>(&self, _message: &str) -> T
+	fn get_user_answer<T: InterfacerReturnType>(&self, _message: &str) -> T
 	where <T as TryFrom<String>>::Error: std::fmt::Display {
 		self.answer
 			.clone()

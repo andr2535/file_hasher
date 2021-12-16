@@ -31,7 +31,7 @@ impl UserMessenger {
 }
 
 impl UserInterface for UserMessenger {
-	fn get_user_answer<T: TryFrom<String> + InterfacerReturnType>(&self, message: &str) -> T
+	fn get_user_answer<T: InterfacerReturnType>(&self, message: &str) -> T
 	where <T as TryFrom<String>>::Error: std::fmt::Display {
 		let mut input_string = String::new();
 		loop {
