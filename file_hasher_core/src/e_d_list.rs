@@ -209,13 +209,18 @@ impl EDList {
 	/// element that is being tested.
 	pub fn verify(&self, prefix: Option<&str>, user_interface: &impl UserInterface) -> Vec<VerifyError> {
 		if let Some(prefix) = prefix {
-			let element_list = &self.element_list;
-			let prefix_elements: Vec<_> = element_list.iter().filter(|e| e.get_path().strip_prefix(prefix).is_some()).collect();
+			let prefix_elements: Vec<_> = self.element_list.iter().filter(|e| e.get_path().strip_prefix(prefix).is_some()).collect();
 			self.verify_loop(&prefix_elements, user_interface)
 		}
 		else {
 			self.verify_loop(&self.element_list, user_interface)
 		}
+	}
+
+	/// Verify all symbolic links in the EDList.
+	pub fn verify_links(&self, user_interface: &impl UserInterface) -> Vec<VerifyError> {
+		let link_elements: Vec<_> = self.element_list.iter().filter(|e| e.get_variant().is_link()).collect();
+		self.verify_loop(&link_elements, user_interface)
 	}
 
 	/// Goes through all the elements in the given element_list.

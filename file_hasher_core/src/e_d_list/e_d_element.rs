@@ -38,6 +38,11 @@ pub enum EDVariantFields {
 	File { checksum: Checksum },
 	Link { target: String },
 }
+impl EDVariantFields {
+	pub fn is_link(&self) -> bool {
+		if let EDVariantFields::Link { target: _ } = self { true } else { false }
+	}
+}
 
 /// EDElement, a shorthand for Error-detect-element
 /// It should be used by a EDList object, for safely storing
