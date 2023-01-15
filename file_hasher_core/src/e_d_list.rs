@@ -523,8 +523,8 @@ impl EDList {
 		let backup_dir = format!("{}/file_hasher_files/hash_file_backups", self.root_path);
 		create_dir_all(&backup_dir).map_err(|err| WriteBackupError::CreateDirectoryError(err.to_string()))?;
 		let local: DateTime<Local> = Local::now();
-		let mut file =
-			File::create(format!("{}/{}", backup_dir, local)).map_err(|err| WriteBackupError::CreateFileError(err.to_string()))?;
+		let mut file = File::create(format!("{}/{}", backup_dir, local.format("%Y-%m-%d %H.%M.%S.%f %z")))
+			.map_err(|err| WriteBackupError::CreateFileError(err.to_string()))?;
 		self.write_edlist_to_file(&mut file, "hashbackup")?;
 		Ok(())
 	}

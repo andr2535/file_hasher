@@ -47,9 +47,8 @@ impl UserInterface for UserMessenger {
 			}
 			println!();
 			self.stdin.read_line(&mut input_string).expect("Error reading user input");
-			input_string.pop(); // Remove endline char.
 
-			match T::try_from(input_string.clone()) {
+			match T::try_from(input_string.trim_end().to_string()) {
 				Ok(res) => return res,
 				Err(err) => println!("{}", err),
 			}

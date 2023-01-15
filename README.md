@@ -32,8 +32,7 @@ cargo install --path ./file_hasher_term/
 
 #### Other OS than Linux
 
-File_hasher has only been tested on Linux.  
-However I don't see any reason why it wouldn't work on Windows or Mac OS.
+File_hasher should work on Windows, Mac is still not tested.
 
 ## License
 
