@@ -17,7 +17,7 @@
 
 extern crate blake2;
 
-use self::blake2::{digest::VariableOutput, Blake2bVar};
+use self::blake2::{Blake2bVar, digest::VariableOutput};
 use super::Checksum;
 
 /// Converts a VarBlake2b object into an Option of a HASH_OUTPUT_LENGTH

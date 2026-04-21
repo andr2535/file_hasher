@@ -133,7 +133,6 @@ impl From<e_d_element::errors::EDElementError> for CreateError {
 	}
 }
 
-
 #[derive(Debug)]
 pub enum IndexError {
 	CantGetSubDirError(String, String),
@@ -156,7 +155,6 @@ impl From<std::io::Error> for IndexError {
 		IndexError::IoError(err)
 	}
 }
-
 
 #[derive(Debug)]
 pub enum WriteBackupError {

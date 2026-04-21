@@ -78,7 +78,7 @@ impl TryFrom<String> for SlashEnding {
 	type Error = &'static str;
 
 	fn try_from(path: String) -> Result<SlashEnding, Self::Error> {
-		if let Some('/') = path.chars().rev().next() {
+		if let Some('/') = path.chars().next_back() {
 			Ok(Self { path })
 		}
 		else {

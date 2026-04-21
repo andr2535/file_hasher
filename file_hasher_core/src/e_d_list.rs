@@ -21,14 +21,14 @@ pub mod errors;
 use std::{
 	collections::HashMap,
 	convert::TryFrom,
-	fs::{canonicalize, create_dir_all, File},
+	fs::{File, canonicalize, create_dir_all},
 	io::{BufRead, BufReader, Write},
 	path::Path,
 };
 
 use blake2::{
-	digest::{Update, VariableOutput},
 	Blake2bVar,
+	digest::{Update, VariableOutput},
 };
 use chrono::prelude::{DateTime, Local};
 use errors::*;
@@ -39,7 +39,7 @@ use self::e_d_element::EDElement;
 use super::{
 	path_banlist::PathBanlist,
 	shared,
-	shared::{constants::*, Checksum, SlashEnding, StubUserInterface, UserInterface, YesNo, YesNoAuto},
+	shared::{Checksum, SlashEnding, StubUserInterface, UserInterface, YesNo, YesNoAuto, constants::*},
 };
 
 enum ListVersion<'a> {
@@ -59,7 +59,7 @@ impl std::fmt::Display for FileOperation {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		use FileOperation::*;
 		let from_convert = |from| {
-			canonicalize(&from)
+			canonicalize(from)
 				.map(|from| from.to_str().unwrap().to_string())
 				.unwrap_or(format!("'''Error getting canonical path of {}'''", from))
 		};
@@ -494,7 +494,7 @@ impl EDList {
 		Ok(index_list)
 	}
 
-	fn get_version_from_line(line: &str) -> ListVersion {
+	fn get_version_from_line<'a>(line: &'a str) -> ListVersion<'a> {
 		match line.strip_prefix(LIST_VERSION_PREFIX) {
 			Some("1.1") => ListVersion::V1_1,
 			Some("1.0") => ListVersion::V1_0,
@@ -542,7 +542,7 @@ impl EDList {
 		hasher.update(self.xor_checksum.as_ref());
 
 		let list_version_string = format!("{}{}\n", LIST_VERSION_PREFIX, CURRENT_LIST_VERSION);
-		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(&self.xor_checksum.as_ref()));
+		let xor_checksum_string = format!("{}{}\n", XOR_CHECKSUM_PREFIX, hex::encode_upper(self.xor_checksum.as_ref()));
 		let fin_checksum_string = format!("{}{}\n", FIN_CHECKSUM_PREFIX, shared::blake2_to_checksum(hasher));
 
 		let final_string = format!("{}{}{}{}", list_version_string, xor_checksum_string, fin_checksum_string, element_string);
@@ -645,15 +645,11 @@ impl EDList {
 	) -> Result<(), SyncFromError> {
 		use std::fs;
 
-		use filetime::{set_symlink_file_times, FileTime};
 		use FileOperation::*;
+		use filetime::{FileTime, set_symlink_file_times};
 
 		let operations_length_width = operations.len().to_string().len();
-		let mut synclist = fs::OpenOptions::new()
-			.create(true)
-			.write(true)
-			.append(true)
-			.open(format!("{}synclist", backup_folder))?;
+		let mut synclist = fs::OpenOptions::new().create(true).append(true).open(format!("{}synclist", backup_folder))?;
 		for operation in operations {
 			let op_string = format!("{}\n", operation);
 			synclist.write_all(op_string.as_bytes())?;
@@ -772,7 +768,7 @@ impl EDList {
 				.get_mut(&(source_element.get_variant().clone(), source_element.get_modified_time()))
 				.unwrap_or(&mut empty_dummy_vec);
 			let exact_match = existing_files
-				.drain_filter(|existing_element| {
+				.extract_if(.., |existing_element| {
 					let prefix_stripped_source = source_element.get_path().strip_prefix(sync_from_prefix.as_str()).unwrap();
 					let prefix_stripped_target = existing_element.get_path().strip_prefix(sync_to_prefix.as_str()).unwrap();
 					// Since paths are unique, there can only be up to one collision.

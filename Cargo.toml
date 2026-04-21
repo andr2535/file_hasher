@@ -1,4 +1,6 @@
 [workspace]
+resolver = "2"
+
 members = [
     "file_hasher_term"
 ]

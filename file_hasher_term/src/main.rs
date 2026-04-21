@@ -57,7 +57,6 @@ fn main() {
 		},
 	};
 
-
 	let interfacer = UserMessenger::new();
 
 	loop {

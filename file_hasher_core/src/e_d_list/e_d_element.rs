@@ -18,14 +18,14 @@
 use std::{fs, fs::File, io::prelude::Read, time::SystemTime};
 
 use blake2::{
-	digest::{Update, VariableOutput},
 	Blake2bVar,
+	digest::{Update, VariableOutput},
 };
 use hex::decode_to_slice;
 
 use crate::{
 	shared,
-	shared::{constants::HASH_OUTPUT_LENGTH, Checksum},
+	shared::{Checksum, constants::HASH_OUTPUT_LENGTH},
 };
 
 pub mod errors;
@@ -40,7 +40,7 @@ pub enum EDVariantFields {
 }
 impl EDVariantFields {
 	pub fn is_link(&self) -> bool {
-		if let EDVariantFields::Link { target: _ } = self { true } else { false }
+		matches!(self, EDVariantFields::Link { target: _ })
 	}
 }
 

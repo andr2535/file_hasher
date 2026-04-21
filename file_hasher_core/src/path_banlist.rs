@@ -17,18 +17,18 @@
 
 use std::{
 	collections::HashMap,
-	fs::{create_dir_all, File},
+	fs::{File, create_dir_all},
 	io::{BufRead, BufReader, Write},
 };
 
 use blake2::{
-	digest::{Update, VariableOutput},
 	Blake2bVar,
+	digest::{Update, VariableOutput},
 };
 
 use crate::{
 	shared,
-	shared::{constants, UserInterface, YesNo},
+	shared::{UserInterface, YesNo, constants},
 };
 
 pub mod errors;
@@ -138,7 +138,7 @@ impl PathBanlist {
 	}
 
 	/// identify_line determines if a line is a comment, a checksum or a banned path.
-	fn identify_line(line: &str) -> LineType {
+	fn identify_line<'a>(line: &'a str) -> LineType<'a> {
 		match line.chars().next() {
 			Some(character) => {
 				if character == '#' {
